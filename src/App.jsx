@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { db } from "./firebase";
+import { db } from "./firebase.js";
 import { ref, set, get, onValue, off } from "firebase/database";
 
 // ─── Card Engine ──────────────────────────────────────────────────────────────
 const SUITS = ["♠", "♥", "♦", "♣"];
-const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 
 function cardValue(rank) {
   if (rank === "A") return 1;
-  if (["J","Q","K"].includes(rank)) return 10;
+  if (["J", "Q", "K"].includes(rank)) return 10;
   return parseInt(rank);
 }
 
@@ -157,7 +157,7 @@ function Lobby({ onJoin }) {
               <div className="field">
                 <label>MAX PLAYERS</label>
                 <div className="mini-btns">
-                  {[2,3,4,5,6,7,8,9,10,11,12].map(n => (
+                  {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => (
                     <button key={n} className={`nb ${numPlayers === n ? "on" : ""}`} onClick={() => setNumPlayers(n)}>{n}</button>
                   ))}
                 </div>
@@ -165,14 +165,14 @@ function Lobby({ onJoin }) {
               <div className="field">
                 <label>CARD SETS</label>
                 <div className="mini-btns">
-                  {[1,2,3,4].map(n => (
+                  {[1, 2, 3, 4].map(n => (
                     <button key={n} className={`nb ${numSets === n ? "on" : ""}`} onClick={() => setNumSets(n)}>{n}</button>
                   ))}
                 </div>
               </div>
             </div>
             <div className="field">
-              <label>ELIMINATION SCORE — <b style={{color:"var(--gold)"}}>{maxScore} pts</b> (min 50)</label>
+              <label>ELIMINATION SCORE — <b style={{ color: "var(--gold)" }}>{maxScore} pts</b> (min 50)</label>
               <div className="score-slider-row">
                 <input type="range" min={50} max={500} step={50} value={maxScore}
                   onChange={e => setMaxScore(+e.target.value)} className="slider" />
@@ -765,9 +765,9 @@ export default function App() {
   return (
     <>
       <style>{CSS}</style>
-      {phase === "lobby"   && <Lobby onJoin={handleJoin} />}
+      {phase === "lobby" && <Lobby onJoin={handleJoin} />}
       {phase === "waiting" && <WaitingRoom roomId={roomId} myName={myName} isHost={isHost} onGameStart={handleGameStart} />}
-      {phase === "game"    && <GameScreen roomId={roomId} myName={myName} initialState={gameState} />}
+      {phase === "game" && <GameScreen roomId={roomId} myName={myName} initialState={gameState} />}
     </>
   );
 }
