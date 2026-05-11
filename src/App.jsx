@@ -805,7 +805,6 @@ export default function App() {
   const [isHost, setIsHost] = useState(false);
   const [gameState, setGameState] = useState(null);
   const [showExitModal, setShowExitModal] = useState(false);
-  const [pendingExit, setPendingExit] = useState(null); // "reload" | "back"
 
   const handleJoin = (code, name, host) => { setRoomId(code); setMyName(name); setIsHost(host); setPhase("waiting"); };
   const handleGameStart = (gs) => { setGameState(gs); setPhase("game"); };
@@ -832,7 +831,6 @@ export default function App() {
       // Re-push so the URL doesn't actually change
       window.history.pushState({ lowcard: true }, "");
       setShowExitModal(true);
-      setPendingExit("back");
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -842,12 +840,11 @@ export default function App() {
     setShowExitModal(false);
     // Actually leave — remove the beforeunload guard first so it doesn't double-prompt
     window.removeEventListener("beforeunload", () => {});
-    window.location.href = window.location.href; // force reload to lobby
+    window.location.reload();
   };
 
   const cancelExit = () => {
     setShowExitModal(false);
-    setPendingExit(null);
   };
 
   return (
