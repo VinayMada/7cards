@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { db } from "./firebase";
-import { ref, set, get, onValue, off } from "firebase/database";
+import { ref, set, get, remove, onValue, off } from "firebase/database";
 
 // ─── Card Engine ──────────────────────────────────────────────────────────────
 const SUITS = ["♠","♥","♦","♣"];
@@ -64,6 +64,9 @@ async function roomGet(roomId) {
 async function roomSet(roomId, state) {
   try { await set(ref(db, `rooms/${roomId}`), state); }
   catch (e) { console.error("roomSet error", e); }
+}
+async function roomDelete(roomId) {
+  try { await remove(ref(db, `rooms/${roomId}`)); } catch {}
 }
 function roomListen(roomId, callback) {
   const r = ref(db, `rooms/${roomId}`);
