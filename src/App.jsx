@@ -278,6 +278,46 @@ function WaitingRoom({ roomId, myName, isHost, onGameStart }) {
   );
 }
 
+// ─── Timer Border Component ──────────────────────────────────────────────────
+// Draws a conic SVG border that shrinks clockwise from top-center as time runs out.
+// pct: 0-100 (100 = full, 0 = empty). Visible to ALL players for the active chip.
+function TimerBorder({ pct, width, height, radius = 10, strokeWidth = 2.5 }) {
+  const W = width + strokeWidth * 2;
+  const H = height + strokeWidth * 2;
+  const r = radius;
+  const sw = strokeWidth;
+  // Clockwise path starting from top-center
+  const startX = W / 2;
+  const d = [
+    `M ${startX} ${sw / 2}`,
+    `H ${W - r}`,
+    `Q ${W} ${sw / 2} ${W} ${r}`,
+    `V ${H - r}`,
+    `Q ${W} ${H} ${W - r} ${H}`,
+    `H ${r}`,
+    `Q ${0} ${H} ${0} ${H - r}`,
+    `V ${r}`,
+    `Q ${0} ${sw / 2} ${r} ${sw / 2}`,
+    `H ${startX}`,
+  ].join(" ");
+  // Perimeter length for dasharray
+  const perim = 2 * (W - 2 * r) + 2 * (H - 2 * r) + 2 * Math.PI * r;
+  const dashLen = (pct / 100) * perim;
+  const color = pct > 50 ? "#2ecc71" : pct > 20 ? "#e67e22" : "#e74c3c";
+  return (
+    <svg
+      width={W} height={H}
+      style={{position:"absolute", top: -sw, left: -sw, pointerEvents:"none", overflow:"visible", borderRadius: radius}}
+    >
+      {/* Track */}
+      <path d={d} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={sw} strokeLinecap="round" />
+      {/* Animated fill */}
+      <path d={d} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
+        strokeDasharray={`${dashLen} ${perim}`} strokeDashoffset={0} />
+    </svg>
+  );
+}
+
 // ─── Game Screen ──────────────────────────────────────────────────────────────
 function GameScreen({ roomId, myName, initialState }) {
   const [gs, setGs] = useState(initialState);
@@ -578,8 +618,8 @@ function GameScreen({ roomId, myName, initialState }) {
     r.currentPlayer = nextIdx;
     r.currentPlayerName = aPlayers[nextIdx]?.name;
     r.turnStartedAt = Date.now();
-    const remaining = 5 - afkCounts[myName];
-    r.log = [`⏱️ ${myName} timed out (${afkCounts[myName]}/5) — auto-dropped ${dropped.rank}${dropped.suit}${remaining > 0 ? ` · ${remaining} chance${remaining !== 1 ? "s" : ""} left` : ""}`, ...(r.log || []).slice(0, 14)];
+    const livesLeft = 5 - afkCounts[myName];
+    r.log = [`⏱️ ${myName} timed out — auto-dropped ${dropped.rank}${dropped.suit} · ${livesLeft} life${livesLeft !== 1 ? "s" : ""} left`, ...(r.log || []).slice(0, 14)];
     await roomSet(roomId, r);
   };
 
@@ -679,6 +719,7 @@ function GameScreen({ roomId, myName, initialState }) {
       round: newRound, showCaller: null,
       roundOver: false, gameOver: false, winner: null,
       roundHistory: r.roundHistory || [],   // carry history forward
+      afkCounts: r.afkCounts || {},          // carry AFK counts — whole game, never reset
       log: [`Round ${newRound} started! ${startingPlayer?.name} goes first · Joker: ${jc.rank}${jc.suit} = 0 pts`],
     };
     await roomSet(roomId, nextState);
@@ -751,8 +792,11 @@ function GameScreen({ roomId, myName, initialState }) {
           const oppHand = gs.hands?.[p.name] || [];
           const isHost = gs.host === myName;
           return (
-            <div key={i} className={`opp-chip ${isCurrent ? "opp-chip-active" : ""} ${p.eliminated ? "opp-chip-elim" : ""} ${isCurrent && timeLeft <= 10 ? "opp-chip-urgent" : isCurrent && timeLeft <= 20 ? "opp-chip-warn" : ""}`}
-              style={isCurrent ? {"--timer-pct": `${(timeLeft / 60) * 100}%`} : {}}>
+            <div key={i} className={`opp-chip ${isCurrent ? "opp-chip-active" : ""} ${p.eliminated ? "opp-chip-elim" : ""}`}
+              ref={el => { if (el && isCurrent) el._chipEl = el; }}>
+              {isCurrent && !gs.roundOver && (
+                <TimerBorder pct={(timeLeft / 60) * 100} width={90} height={60} />
+              )}
               <div className="opp-chip-top">
                 <span className="opp-chip-name">{isCurrent ? "▶ " : ""}{p.name}</span>
                 {isHost && !p.eliminated && (
@@ -763,11 +807,6 @@ function GameScreen({ roomId, myName, initialState }) {
                 <span className="opp-chip-cards">🃏 {oppHand.length}</span>
                 <span className="opp-chip-score">{p.score} pts</span>
               </div>
-              {isCurrent && !gs.roundOver && (
-                <div className="opp-chip-timer-bar">
-                  <div className="opp-chip-timer-fill" style={{width: `${(timeLeft / 60) * 100}%`, background: timeLeft <= 10 ? "#e74c3c" : timeLeft <= 20 ? "#e67e22" : "#2ecc71"}} />
-                </div>
-              )}
             </div>
           );
         })}
@@ -873,8 +912,12 @@ function GameScreen({ roomId, myName, initialState }) {
         </div>
       </div>
 
-      {/* My hand */}
-      <div className={`my-area ${isEliminated ? "elim" : ""}`}>
+      {/* My hand — timer border when it's my turn */}
+      <div className={`my-area ${isEliminated ? "elim" : ""}`} style={{position:"relative"}}>
+        {isMyTurn && !gs.roundOver && !isEliminated && (() => {
+          // We use a fixed size approximation; the border scales to the div
+          return <TimerBorder pct={(timeLeft / 60) * 100} width={window.innerWidth - 24} height={200} radius={0} strokeWidth={3} />;
+        })()}
         {isEliminated ? (
           <div className="elim-msg">You've been eliminated. Spectating…</div>
         ) : (
@@ -941,16 +984,22 @@ function GameScreen({ roomId, myName, initialState }) {
         )}
       </div>
 
-      {/* Scores strip — shows AFK count warning if applicable */}
+      {/* Scores strip — shows AFK lives for all players */}
       <div className="scores-strip">
         {(gs.players || []).map((p, i) => {
           const afk = gs.afkCounts?.[p.name] || 0;
+          const livesLeft = 5 - afk;
           const isCur = p.name === currentPlayerName;
+          const isMe = p.name === myName;
           return (
-            <div key={i} className={`score-chip ${p.eliminated ? "elim-chip" : ""} ${isCur ? "active-chip" : ""}`}>
-              <span>{p.name}</span>
+            <div key={i} style={{position:"relative"}} className={`score-chip ${p.eliminated ? "elim-chip" : ""} ${isCur ? "active-chip" : ""}`}>
+              {isCur && !gs.roundOver && isMe && (
+                <TimerBorder pct={(timeLeft/60)*100} width={80} height={26} radius={16} strokeWidth={2} />
+              )}
+              <span>{p.name}{isMe?" (you)":""}</span>
               <span className="sc">{p.score}</span>
-              {afk > 0 && <span className="afk-badge" title={`${afk}/5 AFK strikes`}>⏱{afk}</span>}
+              <span className={`afk-badge ${livesLeft <= 1 ? "afk-danger" : livesLeft <= 2 ? "afk-warn" : ""}`}
+                title={`${livesLeft} AFK lives left`}>❤️{livesLeft}</span>
             </div>
           );
         })}
@@ -1344,22 +1393,19 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 /* Opponents — horizontal scroll strip of chips */
 .others-row{display:flex;gap:6px;padding:6px 10px;overflow-x:auto;border-bottom:1px solid rgba(255,255,255,0.05);background:rgba(0,0,0,0.2);-webkit-overflow-scrolling:touch;}
 .others-row::-webkit-scrollbar{display:none;}
-.opp-chip{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:6px 10px;min-width:90px;flex-shrink:0;transition:border-color 0.3s,box-shadow 0.3s;overflow:hidden;position:relative;}
-.opp-chip-active{background:rgba(212,168,67,0.1);border-color:var(--gold);box-shadow:0 0 0 1.5px var(--gold);}
-.opp-chip-warn{border-color:#e67e22!important;box-shadow:0 0 0 1.5px #e67e22!important;}
-.opp-chip-urgent{border-color:#e74c3c!important;box-shadow:0 0 0 1.5px #e74c3c,0 0 8px rgba(231,76,60,0.4)!important;animation:chip-urgent-pulse 0.6s infinite;}
-@keyframes chip-urgent-pulse{0%,100%{box-shadow:0 0 0 1.5px #e74c3c,0 0 6px rgba(231,76,60,0.3);}50%{box-shadow:0 0 0 2.5px #e74c3c,0 0 14px rgba(231,76,60,0.6);}}
+.opp-chip{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:6px 10px;min-width:94px;flex-shrink:0;transition:background 0.2s;position:relative;}
+.opp-chip-active{background:rgba(212,168,67,0.1);border-color:transparent;}
 .opp-chip-elim{opacity:0.3;text-decoration:line-through;}
 .opp-chip-top{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:4px;}
-.opp-chip-name{font-size:11px;font-weight:700;color:var(--cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70px;}
+.opp-chip-name{font-size:11px;font-weight:700;color:var(--cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:68px;}
 .kick-game-btn{background:rgba(231,76,60,0.15);border:1px solid rgba(231,76,60,0.3);color:#e74c3c;border-radius:5px;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer;flex-shrink:0;line-height:1;}
 .kick-game-btn:hover{background:rgba(231,76,60,0.35);}
 .opp-chip-stats{display:flex;gap:6px;align-items:center;}
 .opp-chip-cards{font-size:11px;color:rgba(240,235,224,0.7);}
 .opp-chip-score{font-size:11px;color:var(--gold);font-weight:700;margin-left:auto;}
-.opp-chip-timer-bar{height:3px;background:rgba(255,255,255,0.1);border-radius:2px;margin-top:5px;overflow:hidden;}
-.opp-chip-timer-fill{height:100%;border-radius:2px;transition:width 0.5s linear;}
-.afk-badge{font-size:9px;color:#e67e22;font-weight:700;margin-left:2px;}
+.afk-badge{font-size:9px;font-weight:700;margin-left:2px;}
+.afk-warn{color:#e67e22!important;}
+.afk-danger{color:#e74c3c!important;animation:blink 0.8s infinite;}
 
 /* Table / felt — smaller on mobile */
 .table-center{display:flex;flex-direction:column;align-items:center;padding:8px 10px;}
