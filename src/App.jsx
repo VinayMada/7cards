@@ -792,8 +792,7 @@ function GameScreen({ roomId, myName, initialState }) {
           const oppHand = gs.hands?.[p.name] || [];
           const isHost = gs.host === myName;
           return (
-            <div key={i} className={`opp-chip ${isCurrent ? "opp-chip-active" : ""} ${p.eliminated ? "opp-chip-elim" : ""}`}
-              ref={el => { if (el && isCurrent) el._chipEl = el; }}>
+            <div key={i} className={`opp-chip ${isCurrent ? "opp-chip-active" : ""} ${p.eliminated ? "opp-chip-elim" : ""}`}>
               {isCurrent && !gs.roundOver && (
                 <TimerBorder pct={(timeLeft / 60) * 100} width={90} height={60} />
               )}
@@ -912,12 +911,8 @@ function GameScreen({ roomId, myName, initialState }) {
         </div>
       </div>
 
-      {/* My hand — timer border when it's my turn */}
-      <div className={`my-area ${isEliminated ? "elim" : ""}`} style={{position:"relative"}}>
-        {isMyTurn && !gs.roundOver && !isEliminated && (() => {
-          // We use a fixed size approximation; the border scales to the div
-          return <TimerBorder pct={(timeLeft / 60) * 100} width={window.innerWidth - 24} height={200} radius={0} strokeWidth={3} />;
-        })()}
+      {/* My hand */}
+      <div className={`my-area ${isEliminated ? "elim" : ""} ${isMyTurn && !gs.roundOver ? (timeLeft <= 10 ? "my-area-urgent" : timeLeft <= 20 ? "my-area-warn" : "my-area-active") : ""}`}>
         {isEliminated ? (
           <div className="elim-msg">You've been eliminated. Spectating…</div>
         ) : (
@@ -993,9 +988,7 @@ function GameScreen({ roomId, myName, initialState }) {
           const isMe = p.name === myName;
           return (
             <div key={i} style={{position:"relative"}} className={`score-chip ${p.eliminated ? "elim-chip" : ""} ${isCur ? "active-chip" : ""}`}>
-              {isCur && !gs.roundOver && isMe && (
-                <TimerBorder pct={(timeLeft/60)*100} width={80} height={26} radius={16} strokeWidth={2} />
-              )}
+    
               <span>{p.name}{isMe?" (you)":""}</span>
               <span className="sc">{p.score}</span>
               <span className={`afk-badge ${livesLeft <= 1 ? "afk-danger" : livesLeft <= 2 ? "afk-warn" : ""}`}
@@ -1393,8 +1386,8 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 /* Opponents — horizontal scroll strip of chips */
 .others-row{display:flex;gap:6px;padding:6px 10px;overflow-x:auto;border-bottom:1px solid rgba(255,255,255,0.05);background:rgba(0,0,0,0.2);-webkit-overflow-scrolling:touch;}
 .others-row::-webkit-scrollbar{display:none;}
-.opp-chip{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:6px 10px;min-width:94px;flex-shrink:0;transition:background 0.2s;position:relative;}
-.opp-chip-active{background:rgba(212,168,67,0.1);border-color:transparent;}
+.opp-chip{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:6px 10px;min-width:94px;flex-shrink:0;transition:background 0.2s;position:relative;overflow:visible;}
+.opp-chip-active{background:rgba(212,168,67,0.08);border-color:transparent;}
 .opp-chip-elim{opacity:0.3;text-decoration:line-through;}
 .opp-chip-top{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:4px;}
 .opp-chip-name{font-size:11px;font-weight:700;color:var(--cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:68px;}
@@ -1432,7 +1425,11 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 @keyframes discard-pulse{0%,100%{box-shadow:0 0 0 2px #3498db,0 3px 10px rgba(52,152,219,0.3);}50%{box-shadow:0 0 0 4px #3498db,0 5px 18px rgba(52,152,219,0.6);}}
 
 /* My hand area */
-.my-area{background:rgba(0,0,0,0.45);border-top:2px solid rgba(212,168,67,0.2);padding:10px 10px 16px;flex:1;display:flex;flex-direction:column;}
+.my-area{background:rgba(0,0,0,0.45);border-top:2px solid rgba(212,168,67,0.2);padding:10px 10px 16px;flex:1;display:flex;flex-direction:column;transition:border-color 0.5s;}
+.my-area-active{border-top-color:#2ecc71;}
+.my-area-warn{border-top-color:#e67e22;}
+.my-area-urgent{border-top-color:#e74c3c;animation:top-border-pulse 0.6s infinite;}
+@keyframes top-border-pulse{0%,100%{border-top-color:#e74c3c;}50%{border-top-color:rgba(231,76,60,0.3);}}
 .my-area.elim{opacity:0.5;}
 .elim-msg{text-align:center;color:rgba(240,235,224,0.4);font-size:13px;padding:16px;}
 .my-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px;}
