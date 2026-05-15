@@ -279,40 +279,29 @@ function WaitingRoom({ roomId, myName, isHost, onGameStart }) {
 }
 
 // ─── Timer Border Component ──────────────────────────────────────────────────
-// Draws a conic SVG border that shrinks clockwise from top-center as time runs out.
-// pct: 0-100 (100 = full, 0 = empty). Visible to ALL players for the active chip.
-function TimerBorder({ pct, width, height, radius = 10, strokeWidth = 2.5 }) {
-  const W = width + strokeWidth * 2;
-  const H = height + strokeWidth * 2;
-  const r = radius;
-  const sw = strokeWidth;
-  // Clockwise path starting from top-center
-  const startX = W / 2;
-  const d = [
-    `M ${startX} ${sw / 2}`,
-    `H ${W - r}`,
-    `Q ${W} ${sw / 2} ${W} ${r}`,
-    `V ${H - r}`,
-    `Q ${W} ${H} ${W - r} ${H}`,
-    `H ${r}`,
-    `Q ${0} ${H} ${0} ${H - r}`,
-    `V ${r}`,
-    `Q ${0} ${sw / 2} ${r} ${sw / 2}`,
-    `H ${startX}`,
-  ].join(" ");
-  // Perimeter length for dasharray
-  const perim = 2 * (W - 2 * r) + 2 * (H - 2 * r) + 2 * Math.PI * r;
-  const dashLen = (pct / 100) * perim;
+// Uses a fixed internal coordinate system (200x100 viewBox) and stretches
+// via CSS to fill parent exactly. Parent MUST have position:relative.
+function TimerBorder({ pct, borderRadius = 10 }) {
+  // Fixed coordinate space — viewBox matches this
+  const VW = 200, VH = 100, r = borderRadius, sw = 4;
   const color = pct > 50 ? "#2ecc71" : pct > 20 ? "#e67e22" : "#e74c3c";
+  // Clockwise path from top-center in viewBox coords
+  const sx = VW / 2;
+  const d = `M ${sx} ${sw/2} H ${VW-r} Q ${VW} ${sw/2} ${VW} ${r} V ${VH-r} Q ${VW} ${VH} ${VW-r} ${VH} H ${r} Q 0 ${VH} 0 ${VH-r} V ${r} Q 0 ${sw/2} ${r} ${sw/2} H ${sx}`;
+  const perim = 2*(VW - 2*r) + 2*(VH - 2*r) + 2*Math.PI*r;
+  const dashLen = (pct / 100) * perim;
   return (
     <svg
-      width={W} height={H}
-      style={{position:"absolute", top: -sw, left: -sw, pointerEvents:"none", overflow:"visible", borderRadius: radius}}
+      viewBox={`0 0 ${VW} ${VH}`}
+      preserveAspectRatio="none"
+      style={{
+        position:"absolute", inset:-2,
+        width:"calc(100% + 4px)", height:"calc(100% + 4px)",
+        pointerEvents:"none", overflow:"visible",
+      }}
     >
-      {/* Track */}
-      <path d={d} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={sw} strokeLinecap="round" />
-      {/* Animated fill */}
-      <path d={d} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
+      <path d={d} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={sw} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
+      <path d={d} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="butt" vectorEffect="non-scaling-stroke"
         strokeDasharray={`${dashLen} ${perim}`} strokeDashoffset={0} />
     </svg>
   );
@@ -792,10 +781,8 @@ function GameScreen({ roomId, myName, initialState }) {
           const oppHand = gs.hands?.[p.name] || [];
           const isHost = gs.host === myName;
           return (
-            <div key={i} className={`opp-chip ${isCurrent ? "opp-chip-active" : ""} ${p.eliminated ? "opp-chip-elim" : ""}`}>
-              {isCurrent && !gs.roundOver && (
-                <TimerBorder pct={(timeLeft / 60) * 100} width={90} height={60} />
-              )}
+            <div key={i} className={`opp-chip ${isCurrent ? `opp-chip-active ${timeLeft <= 10 ? "opp-chip-urgent" : timeLeft <= 20 ? "opp-chip-warn" : "opp-chip-go"}` : ""} ${p.eliminated ? "opp-chip-elim" : ""}`}>
+
               <div className="opp-chip-top">
                 <span className="opp-chip-name">{isCurrent ? "▶ " : ""}{p.name}</span>
                 {isHost && !p.eliminated && (
@@ -988,7 +975,9 @@ function GameScreen({ roomId, myName, initialState }) {
           const isMe = p.name === myName;
           return (
             <div key={i} style={{position:"relative"}} className={`score-chip ${p.eliminated ? "elim-chip" : ""} ${isCur ? "active-chip" : ""}`}>
-    
+              {isCur && !gs.roundOver && (
+                <TimerBorder pct={(timeLeft / 60) * 100} borderRadius={16} />
+              )}
               <span>{p.name}{isMe?" (you)":""}</span>
               <span className="sc">{p.score}</span>
               <span className={`afk-badge ${livesLeft <= 1 ? "afk-danger" : livesLeft <= 2 ? "afk-warn" : ""}`}
@@ -1386,8 +1375,12 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 /* Opponents — horizontal scroll strip of chips */
 .others-row{display:flex;gap:6px;padding:6px 10px;overflow-x:auto;border-bottom:1px solid rgba(255,255,255,0.05);background:rgba(0,0,0,0.2);-webkit-overflow-scrolling:touch;}
 .others-row::-webkit-scrollbar{display:none;}
-.opp-chip{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:6px 10px;min-width:94px;flex-shrink:0;transition:background 0.2s;position:relative;overflow:visible;}
-.opp-chip-active{background:rgba(212,168,67,0.08);border-color:transparent;}
+.opp-chip{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:6px 10px;min-width:94px;flex-shrink:0;transition:border-color 0.4s,box-shadow 0.4s;position:relative;}
+.opp-chip-active{background:rgba(255,255,255,0.06);}
+.opp-chip-go{border-color:#2ecc71!important;box-shadow:0 0 6px rgba(46,204,113,0.3);}
+.opp-chip-warn{border-color:#e67e22!important;box-shadow:0 0 6px rgba(230,126,34,0.3);}
+.opp-chip-urgent{border-color:#e74c3c!important;box-shadow:0 0 8px rgba(231,76,60,0.4);animation:chip-urgent-pulse 0.6s infinite;}
+@keyframes chip-urgent-pulse{0%,100%{box-shadow:0 0 6px rgba(231,76,60,0.3);}50%{box-shadow:0 0 14px rgba(231,76,60,0.6);}}
 .opp-chip-elim{opacity:0.3;text-decoration:line-through;}
 .opp-chip-top{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:4px;}
 .opp-chip-name{font-size:11px;font-weight:700;color:var(--cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:68px;}
@@ -1461,7 +1454,7 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 
 /* Scores strip */
 .scores-strip{display:flex;flex-wrap:wrap;gap:5px;padding:6px 10px;background:rgba(0,0,0,0.35);border-top:1px solid rgba(255,255,255,0.05);}
-.score-chip{display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.07);border-radius:16px;padding:3px 10px;font-size:11px;}
+.score-chip{display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.07);border-radius:16px;padding:3px 10px;font-size:11px;position:relative;}
 .score-chip.active-chip{background:rgba(212,168,67,0.12);border-color:var(--gold);}
 .score-chip.elim-chip{opacity:0.3;text-decoration:line-through;}
 .sc{color:var(--gold);font-weight:700;}
