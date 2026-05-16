@@ -279,50 +279,57 @@ function WaitingRoom({ roomId, myName, isHost, onGameStart }) {
 }
 
 // ─── Timer Border Component ──────────────────────────────────────────────────
-// Draws a clockwise shrinking border around its parent element.
-// Parent must have position:relative. Pass exact pixel W/H of the parent.
-function TimerBorder({ pct, w, h, r = 10, sw = 3 }) {
+// Measures its own parent div and draws the arc border exactly around it.
+function TimerBorder({ pct, borderR = 10, sw = 3 }) {
+  const { useState: us, useEffect: ue, useRef: ur } = { useState, useEffect, useRef };
+  const ref = ur(null);
+  const [size, setSize] = us({ w: 0, h: 0 });
+
+  ue(() => {
+    const el = ref.current?.parentElement;
+    if (!el) return;
+    const obs = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      setSize({ w: Math.round(width), h: Math.round(height) });
+    });
+    obs.observe(el);
+    setSize({ w: Math.round(el.offsetWidth), h: Math.round(el.offsetHeight) });
+    return () => obs.disconnect();
+  }, []);
+
+  if (!size.w || !size.h) return <span ref={ref} style={{display:"none"}} />;
+
+  const w = size.w, h = size.h, r = borderR, pad = sw + 1;
+  const W = w + pad * 2, H = h + pad * 2;
   const color = pct > 50 ? "#2ecc71" : pct > 20 ? "#e67e22" : "#e74c3c";
-  // Total SVG canvas is slightly larger than parent to accommodate stroke
-  const pad = sw;
-  const W = w + pad * 2;
-  const H = h + pad * 2;
-  // Path clockwise from top-center, offset by pad
+
+  // Clockwise path from top-center
   const sx = W / 2;
+  const minR = Math.min(r, w / 2, h / 2);
   const d = [
-    `M ${sx} ${pad/2}`,
-    `H ${W - r - pad}`,
-    `Q ${W - pad} ${pad/2} ${W - pad} ${r + pad/2}`,
-    `V ${H - r - pad/2}`,
-    `Q ${W - pad} ${H - pad/2} ${W - r - pad} ${H - pad/2}`,
-    `H ${r + pad}`,
-    `Q ${pad} ${H - pad/2} ${pad} ${H - r - pad/2}`,
-    `V ${r + pad/2}`,
-    `Q ${pad} ${pad/2} ${r + pad} ${pad/2}`,
+    `M ${sx},${pad}`,
+    `H ${W - minR - pad}`,
+    `Q ${W - pad},${pad} ${W - pad},${minR + pad}`,
+    `V ${H - minR - pad}`,
+    `Q ${W - pad},${H - pad} ${W - minR - pad},${H - pad}`,
+    `H ${minR + pad}`,
+    `Q ${pad},${H - pad} ${pad},${H - minR - pad}`,
+    `V ${minR + pad}`,
+    `Q ${pad},${pad} ${minR + pad},${pad}`,
     `H ${sx}`,
   ].join(" ");
-  // Perimeter of the inner rounded rect
-  const perim = 2 * (w - 2*r) + 2 * (h - 2*r) + 2 * Math.PI * r;
+
+  const perim = 2 * (w - 2 * minR) + 2 * (h - 2 * minR) + 2 * Math.PI * minR;
   const dashLen = Math.max(0, (pct / 100) * perim);
+
   return (
-    <svg
+    <svg ref={ref}
       width={W} height={H}
-      style={{
-        position: "absolute",
-        top: -pad,
-        left: -pad,
-        pointerEvents: "none",
-        zIndex: 10,
-      }}
+      style={{ position:"absolute", top:-pad, left:-pad, pointerEvents:"none", zIndex:10, overflow:"visible" }}
     >
-      {/* Track */}
-      <path d={d} fill="none" stroke="rgba(255,255,255,0.1)"
-        strokeWidth={sw} strokeLinecap="round" />
-      {/* Timer arc */}
-      <path d={d} fill="none" stroke={color}
-        strokeWidth={sw} strokeLinecap="round"
-        strokeDasharray={`${dashLen} ${perim + 10}`}
-        strokeDashoffset={0} />
+      <path d={d} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={sw} strokeLinecap="round" />
+      <path d={d} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
+        strokeDasharray={`${dashLen} ${perim + 20}`} strokeDashoffset={0} />
     </svg>
   );
 }
@@ -660,7 +667,12 @@ function GameScreen({ roomId, myName, initialState }) {
     if (!r || r.roundOver) return;
     const myC = handScore(r.hands[myName] || [], r.jokerRank);
     const others = r.players.filter(p => !p.eliminated && p.name !== myName);
-    const someoneBetter = others.some(p => handScore(r.hands[p.name] || [], r.jokerRank) <= myC);
+    // Wrong show if someone has equal OR less count — EXCEPT when caller's count is 0
+    // (0 is the minimum possible, so equal at 0 is not a wrong show)
+    const someoneBetter = others.some(p => {
+      const theirCount = handScore(r.hands[p.name] || [], r.jokerRank);
+      return myC === 0 ? theirCount < myC : theirCount <= myC;
+    });
     let newPlayers = r.players.map(p => {
       if (p.eliminated) return p;
       const add = p.name === myName ? (someoneBetter ? 50 : 0) : handScore(r.hands[p.name] || [], r.jokerRank);
@@ -803,7 +815,7 @@ function GameScreen({ roomId, myName, initialState }) {
           return (
             <div key={i} className={`opp-chip ${isCurrent ? "opp-chip-active" : ""} ${p.eliminated ? "opp-chip-elim" : ""}`}>
               {isCurrent && !gs.roundOver && (
-                <TimerBorder pct={(timeLeft / 60) * 100} w={94} h={60} r={10} sw={3} />
+                <TimerBorder pct={(timeLeft / 60) * 100} borderR={10} sw={3} />
               )}
 
               <div className="opp-chip-top">
@@ -999,7 +1011,7 @@ function GameScreen({ roomId, myName, initialState }) {
           return (
             <div key={i} style={{position:"relative"}} className={`score-chip ${p.eliminated ? "elim-chip" : ""} ${isCur ? "active-chip" : ""}`}>
               {isCur && isMe && !gs.roundOver && (
-                <TimerBorder pct={(timeLeft / 60) * 100} w={120} h={28} r={14} sw={3} />
+                <TimerBorder pct={(timeLeft / 60) * 100} borderR={14} sw={3} />
               )}
               <span>{p.name}{isMe?" (you)":""}</span>
               <span className="sc">{p.score}</span>
