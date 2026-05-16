@@ -279,57 +279,93 @@ function WaitingRoom({ roomId, myName, isHost, onGameStart }) {
 }
 
 // ─── Timer Border Component ──────────────────────────────────────────────────
-// Measures its own parent div and draws the arc border exactly around it.
+// Renders a clockwise-shrinking arc border around its parent element.
+// Uses a hidden sentinel span to measure the parent, then draws an SVG overlay.
+// ONLY re-renders when pct changes — measurement is stable via ResizeObserver.
 function TimerBorder({ pct, borderR = 10, sw = 3 }) {
-  const ref = useRef(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
+  const sentinelRef = useRef(null);
+  const [dim, setDim] = useState(null); // {w, h} in px — parent's offsetWidth/Height
 
   useEffect(() => {
-    const el = ref.current?.parentElement;
-    if (!el) return;
-    const obs = new ResizeObserver(entries => {
-      const { width, height } = entries[0].contentRect;
-      setSize({ w: Math.round(width), h: Math.round(height) });
-    });
-    obs.observe(el);
-    setSize({ w: Math.round(el.offsetWidth), h: Math.round(el.offsetHeight) });
+    const parent = sentinelRef.current?.parentElement;
+    if (!parent) return;
+    // Use offsetWidth/offsetHeight consistently (includes padding, excludes margin/border)
+    const measure = () => {
+      const w = parent.offsetWidth;
+      const h = parent.offsetHeight;
+      if (w > 0 && h > 0) setDim({ w, h });
+    };
+    measure();
+    const obs = new ResizeObserver(measure);
+    obs.observe(parent);
     return () => obs.disconnect();
   }, []);
 
-  if (!size.w || !size.h) return <span ref={ref} style={{display:"none"}} />;
+  // Always render the sentinel so the ref is attached and measurement can fire
+  const sentinel = <span ref={sentinelRef} style={{display:"none",position:"absolute"}} />;
+  if (!dim) return sentinel;
 
-  const w = size.w, h = size.h, r = borderR, pad = sw + 1;
-  const W = w + pad * 2, H = h + pad * 2;
-  const color = pct > 50 ? "#2ecc71" : pct > 20 ? "#e67e22" : "#e74c3c";
+  const { w, h } = dim;
+  const r  = Math.min(borderR, w / 2, h / 2); // clamp radius
+  const pad = sw;           // SVG extends `sw` px outside chip on each side
+  const W   = w + pad * 2;  // total SVG width
+  const H   = h + pad * 2;  // total SVG height
+  const ins = sw / 2;       // stroke centerline inset from chip edge
+
+  // Coordinates of the stroke centerline box
+  const x1 = pad + ins;         // left centerline
+  const x2 = pad + w - ins;     // right centerline
+  const y1 = pad + ins;         // top centerline
+  const y2 = pad + h - ins;     // bottom centerline
+  const sx  = pad + w / 2;      // start x = top center
 
   // Clockwise path from top-center
-  const sx = W / 2;
-  const minR = Math.min(r, w / 2, h / 2);
   const d = [
-    `M ${sx},${pad}`,
-    `H ${W - minR - pad}`,
-    `Q ${W - pad},${pad} ${W - pad},${minR + pad}`,
-    `V ${H - minR - pad}`,
-    `Q ${W - pad},${H - pad} ${W - minR - pad},${H - pad}`,
-    `H ${minR + pad}`,
-    `Q ${pad},${H - pad} ${pad},${H - minR - pad}`,
-    `V ${minR + pad}`,
-    `Q ${pad},${pad} ${minR + pad},${pad}`,
+    `M ${sx} ${y1}`,
+    `H ${x2 - r}`,
+    `Q ${x2} ${y1} ${x2} ${y1 + r}`,
+    `V ${y2 - r}`,
+    `Q ${x2} ${y2} ${x2 - r} ${y2}`,
+    `H ${x1 + r}`,
+    `Q ${x1} ${y2} ${x1} ${y2 - r}`,
+    `V ${y1 + r}`,
+    `Q ${x1} ${y1} ${x1 + r} ${y1}`,
     `H ${sx}`,
   ].join(" ");
 
-  const perim = 2 * (w - 2 * minR) + 2 * (h - 2 * minR) + 2 * Math.PI * minR;
+  // True perimeter of the stroke centerline path
+  const straightW = (x2 - x1) - 2 * r;   // top + bottom straight segments per side
+  const straightH = (y2 - y1) - 2 * r;   // left + right straight segments per side
+  const perim = 2 * straightW + 2 * straightH + 2 * Math.PI * r;
   const dashLen = Math.max(0, (pct / 100) * perim);
 
+  const color = pct > 50 ? "#2ecc71" : pct > 20 ? "#e67e22" : "#e74c3c";
+
   return (
-    <svg ref={ref}
-      width={W} height={H}
-      style={{ position:"absolute", top:-pad, left:-pad, pointerEvents:"none", zIndex:10, overflow:"visible" }}
-    >
-      <path d={d} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={sw} strokeLinecap="round" />
-      <path d={d} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
-        strokeDasharray={`${dashLen} ${perim + 20}`} strokeDashoffset={0} />
-    </svg>
+    <>
+      {sentinel}
+      <svg
+        width={W} height={H}
+        style={{
+          position: "absolute",
+          top:  -pad,
+          left: -pad,
+          pointerEvents: "none",
+          zIndex: 10,
+          // No overflow:hidden — parent chip must NOT clip this SVG
+        }}
+      >
+        {/* Dim track — full perimeter */}
+        <path d={d} fill="none"
+          stroke="rgba(255,255,255,0.12)" strokeWidth={sw} strokeLinecap="round"
+          strokeDasharray={`${perim} ${perim}`} />
+        {/* Coloured arc — shrinks as pct decreases */}
+        <path d={d} fill="none"
+          stroke={color} strokeWidth={sw} strokeLinecap="round"
+          strokeDasharray={`${dashLen} ${perim}`}
+          strokeDashoffset={0} />
+      </svg>
+    </>
   );
 }
 
@@ -1409,7 +1445,7 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 /* Opponents — horizontal scroll strip of chips */
 .others-row{display:flex;gap:6px;padding:6px 10px;overflow-x:auto;border-bottom:1px solid rgba(255,255,255,0.05);background:rgba(0,0,0,0.2);-webkit-overflow-scrolling:touch;}
 .others-row::-webkit-scrollbar{display:none;}
-.opp-chip{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:6px 10px;min-width:94px;flex-shrink:0;position:relative;}
+.opp-chip{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:6px 10px;min-width:94px;flex-shrink:0;position:relative;overflow:visible;}
 .opp-chip-active{background:rgba(212,168,67,0.08);border-color:transparent;}
 .opp-chip-elim{opacity:0.3;text-decoration:line-through;}
 .opp-chip-top{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:4px;}
@@ -1484,7 +1520,7 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 
 /* Scores strip */
 .scores-strip{display:flex;flex-wrap:wrap;gap:5px;padding:6px 10px;background:rgba(0,0,0,0.35);border-top:1px solid rgba(255,255,255,0.05);}
-.score-chip{display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.07);border-radius:16px;padding:3px 10px;font-size:11px;position:relative;}
+.score-chip{display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.07);border-radius:16px;padding:3px 10px;font-size:11px;position:relative;overflow:visible;}
 .score-chip.active-chip{background:rgba(212,168,67,0.12);border-color:var(--gold);}
 .score-chip.elim-chip{opacity:0.3;text-decoration:line-through;}
 .sc{color:var(--gold);font-weight:700;}
