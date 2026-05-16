@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { db } from "./firebase";
 import { ref, set, get, remove, onValue, off } from "firebase/database";
 
@@ -281,11 +281,10 @@ function WaitingRoom({ roomId, myName, isHost, onGameStart }) {
 // ─── Timer Border Component ──────────────────────────────────────────────────
 // Measures its own parent div and draws the arc border exactly around it.
 function TimerBorder({ pct, borderR = 10, sw = 3 }) {
-  const { useState: us, useEffect: ue, useRef: ur } = { useState, useEffect, useRef };
-  const ref = ur(null);
-  const [size, setSize] = us({ w: 0, h: 0 });
+  const ref = useRef(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
 
-  ue(() => {
+  useEffect(() => {
     const el = ref.current?.parentElement;
     if (!el) return;
     const obs = new ResizeObserver(entries => {
