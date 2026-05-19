@@ -841,21 +841,20 @@ function GameScreen({ roomId, myName, initialState }) {
         </div>
       </div>
 
-      {/* Opponents — compact chips, no face-down cards shown */}
+      {/* Opponents — 2-column grid on mobile, horizontal scroll on desktop */}
       <div className="others-row">
         {activePlayers.filter(p => p.name !== myName).map((p, i) => {
           const isCurrent = p.name === currentPlayerName;
           const oppHand = gs.hands?.[p.name] || [];
-          const isHost = gs.host === myName;
+          const isHostMe = gs.host === myName;
           return (
             <div key={i} className={`opp-chip ${isCurrent ? "opp-chip-active" : ""} ${p.eliminated ? "opp-chip-elim" : ""}`}>
               {isCurrent && !gs.roundOver && (
                 <TimerBorder pct={(timeLeft / 60) * 100} borderR={10} sw={3} />
               )}
-
               <div className="opp-chip-top">
                 <span className="opp-chip-name">{isCurrent ? "▶ " : ""}{p.name}</span>
-                {isHost && !p.eliminated && (
+                {isHostMe && !p.eliminated && (
                   <button className="kick-game-btn" onClick={() => kickPlayer(p.name)} title={`Remove ${p.name}`}>✕</button>
                 )}
               </div>
@@ -1582,4 +1581,98 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 ::-webkit-scrollbar{height:3px;width:3px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:rgba(212,168,67,0.3);border-radius:2px;}
+
+/* ══════════════════════════════════════════════
+   MOBILE ONLY  (≤600px)
+   Desktop layout is completely untouched above
+   ══════════════════════════════════════════════ */
+@media (max-width: 600px) {
+
+  /* 1. Opponents — 2-column grid, vertical layout */
+  .others-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 8px 10px;
+    overflow-x: unset;
+    overflow-y: visible;
+  }
+  .opp-chip {
+    min-width: unset !important;
+    width: 100%;
+  }
+
+  /* 2. Game wrap — flex column, fill full viewport height properly on iOS */
+  .game-wrap {
+    min-height: 100svh;          /* svh = small viewport height, fixes iOS Safari bar */
+    min-height: -webkit-fill-available;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 3. Scores strip — stays at bottom, above iOS home bar */
+  .scores-strip {
+    position: sticky;
+    bottom: 0;
+    bottom: env(safe-area-inset-bottom, 0px);
+    background: rgba(8,15,13,0.98);
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    z-index: 50;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  /* 4. My hand area — flex column, grows to fill available space */
+  .my-area {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 5. Cards — wrap into multiple rows (2-3 per row) instead of single horizontal scroll */
+  .hand-row {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    overflow-x: unset !important;
+    justify-content: center;
+    padding: 6px 4px 10px !important;
+    align-items: flex-start !important;
+  }
+  .hand-row .card-wrap {
+    flex: 0 0 auto;
+  }
+  /* Slightly larger cards when wrapped so they're easy to tap */
+  .hand-row .card-md {
+    width: 72px !important;
+    height: 102px !important;
+  }
+  .hand-row .card-md .corner b { font-size: 14px !important; }
+  .hand-row .card-md .corner span { font-size: 11px !important; }
+  .hand-row .card-md .mid-suit { font-size: 22px !important; }
+
+  /* 6. Table/felt — slightly more compact */
+  .felt-surface {
+    gap: 12px !important;
+    padding: 10px 12px !important;
+  }
+
+  /* 7. Top bar text — shrink slightly */
+  .tb-room { font-size: 9px !important; }
+  .tb-round { font-size: 11px !important; }
+  .joker-info { font-size: 10px !important; }
+  .tb-score { font-size: 10px !important; }
+}
+
+/* Extra tiny screens */
+@media (max-width: 360px) {
+  .hand-row .card-md {
+    width: 62px !important;
+    height: 88px !important;
+  }
+  .others-row {
+    gap: 5px;
+    padding: 6px 8px;
+  }
+}
 `;
