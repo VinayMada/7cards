@@ -1602,34 +1602,42 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
     width: 100%;
   }
 
-  /* 2. Game wrap — flex column, fill full viewport height properly on iOS */
+  /* 2. Game wrap — natural height, no flex stretching.
+     flex:1 on children was causing huge empty gap on iOS Safari. */
   .game-wrap {
-    min-height: 100svh;          /* svh = small viewport height, fixes iOS Safari bar */
-    min-height: -webkit-fill-available;
-    display: flex;
-    flex-direction: column;
+    display: block !important;   /* not flex — prevents children from stretching */
+    min-height: unset !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  /* 3. Scores strip — stays at bottom, above iOS home bar */
+  /* 3. Scores strip — directly after cards, NO sticky/absolute positioning.
+     Sticky was the root cause of the gap: it reserved space at the bottom. */
   .scores-strip {
-    position: sticky;
-    bottom: 0;
-    bottom: env(safe-area-inset-bottom, 0px);
+    position: relative !important;
+    bottom: unset !important;
     background: rgba(8,15,13,0.98);
     padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
     z-index: 50;
     flex-wrap: wrap;
     justify-content: center;
+    border-top: 1px solid rgba(255,255,255,0.06);
   }
 
-  /* 4. My hand area — flex column, grows to fill available space */
+  /* 4. My hand area — height is content-driven, no flex grow */
   .my-area {
-    flex: 1;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    flex: unset !important;
+    height: auto !important;
+    overflow-y: visible !important;
+    padding-bottom: 8px;
   }
 
-  /* 5. Cards — wrap into multiple rows (2-3 per row) instead of single horizontal scroll */
+  /* 5. Table center — no flex: 1 stretching */
+  .table-center {
+    flex: unset !important;
+    height: auto !important;
+  }
+
+  /* 6. Cards — wrap into rows, centred */
   .hand-row {
     display: flex !important;
     flex-wrap: wrap !important;
@@ -1642,7 +1650,6 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
   .hand-row .card-wrap {
     flex: 0 0 auto;
   }
-  /* Slightly larger cards when wrapped so they're easy to tap */
   .hand-row .card-md {
     width: 72px !important;
     height: 102px !important;
@@ -1651,13 +1658,13 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
   .hand-row .card-md .corner span { font-size: 11px !important; }
   .hand-row .card-md .mid-suit { font-size: 22px !important; }
 
-  /* 6. Table/felt — slightly more compact */
+  /* 7. Table/felt — slightly more compact */
   .felt-surface {
     gap: 12px !important;
     padding: 10px 12px !important;
   }
 
-  /* 7. Top bar text — shrink slightly */
+  /* 8. Top bar text — shrink slightly */
   .tb-room { font-size: 9px !important; }
   .tb-round { font-size: 11px !important; }
   .joker-info { font-size: 10px !important; }
