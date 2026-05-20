@@ -395,7 +395,7 @@ function GameScreen({ roomId, myName, initialState }) {
       // Only the current player's client triggers the auto-advance
       if (left === 0 && gs.currentPlayerName === myName) {
         clearInterval(tick);
-        autoAdvanceTurn();
+        autoAdvanceTurn(gs.turnStartedAt);
       }
     }, 500);
     return () => clearInterval(tick);
@@ -614,9 +614,11 @@ function GameScreen({ roomId, myName, initialState }) {
   };
 
   // ── Auto-advance turn when timer expires (also tracks AFK count) ──
-  const autoAdvanceTurn = async () => {
+  const autoAdvanceTurn = async (capturedTurnStart) => {
     const r = await roomGet(roomId);
     if (!r || r.roundOver || r._awaitingDraw) return;
+    // Guard: if turnStartedAt changed, the turn already moved — abort to prevent state revert on reconnect
+    if (capturedTurnStart && r.turnStartedAt !== capturedTurnStart) return;
     const aPlayers = r.players.filter(p => !p.eliminated);
     const curIdx = (r.currentPlayer || 0) % aPlayers.length;
     if (aPlayers[curIdx]?.name !== myName) return;
@@ -646,6 +648,51 @@ function GameScreen({ roomId, myName, initialState }) {
         r.host = remaining.reduce((a, b) => a.score <= b.score ? a : b).name;
       }
       r.log = [`🚫 ${myName} removed for being AFK (5 timeouts)`, ...(r.log || []).slice(0, 14)];
+      await roomSet(roomId, r);
+      return;
+    }
+
+    // ── 7-penalty active: auto-counter or auto-take penalty ──
+    if ((r.sevenPenalty || 0) > 0) {
+      const sevens = hand.filter(c => c.rank === "7");
+      const rankCounts = {};
+      hand.forEach(c => { rankCounts[c.rank] = (rankCounts[c.rank] || 0) + 1; });
+      const tackleRank = Object.keys(rankCounts).find(rank => rankCounts[rank] >= 3);
+      const livesLeft = 5 - afkCounts[myName];
+      if (sevens.length > 0) {
+        // Auto-forward all 7s
+        sevens.forEach(s => hand.splice(hand.findIndex(c => c.id === s.id), 1));
+        r.discardPile = [...sevens, ...(r.discardPile || [])];
+        r.sevenPenalty = (r.sevenPenalty || 0) + sevens.length;
+        r.lastDropRank = "7";
+        if (hand.length === 0) { reshuffleIfNeeded(r); if (r.drawPile.length > 0) hand.push(r.drawPile.shift()); }
+        r.hands[myName] = hand;
+        r.log = [`⏱️ ${myName} timed out — auto-forwarded ${sevens.map(c=>c.rank+c.suit).join(",")} · ${livesLeft} life${livesLeft!==1?"s":""} left`, ...(r.log||[]).slice(0,14)];
+      } else if (tackleRank) {
+        // Auto-tackle with 3 cards of same rank
+        const tackleCards = hand.filter(c => c.rank === tackleRank).slice(0, 3);
+        tackleCards.forEach(c => hand.splice(hand.findIndex(x => x.id === c.id), 1));
+        r.discardPile = [...tackleCards, ...(r.discardPile || [])];
+        r.sevenPenalty = 0;
+        r.lastDropRank = tackleRank;
+        if (hand.length === 0) { reshuffleIfNeeded(r); if (r.drawPile.length > 0) hand.push(r.drawPile.shift()); }
+        r.hands[myName] = hand;
+        r.log = [`⏱️ ${myName} timed out — auto-tackled 7-chain with ${tackleRank}s · ${livesLeft} life${livesLeft!==1?"s":""} left`, ...(r.log||[]).slice(0,14)];
+      } else {
+        // Can't counter — auto-take penalty cards
+        const pen = r.sevenPenalty * 2;
+        reshuffleIfNeeded(r);
+        for (let i = 0; i < pen && r.drawPile.length > 0; i++) { hand.push(r.drawPile.shift()); reshuffleIfNeeded(r); }
+        r.sevenPenalty = 0;
+        r.lastDropRank = null;
+        r.hands[myName] = hand;
+        r.log = [`⏱️ ${myName} timed out — took ${pen} penalty cards · ${livesLeft} life${livesLeft!==1?"s":""} left`, ...(r.log||[]).slice(0,14)];
+      }
+      const nextIdxSeven = computeNext(curIdx, 0, aPlayers.length);
+      r.currentPlayer = nextIdxSeven;
+      r.currentPlayerName = aPlayers[nextIdxSeven]?.name;
+      r.turnStartedAt = Date.now();
+      r._awaitingDraw = null;
       await roomSet(roomId, r);
       return;
     }
@@ -828,7 +875,8 @@ function GameScreen({ roomId, myName, initialState }) {
           <span className="tb-round">Round {gs.round || 1}</span>
         </div>
         <div className="tb-center">
-          <span className="joker-info">JOKER: <b>{gs.jokerRank}{gs.jokerSuit}</b> = 0</span>
+          <div className="joker-info">JOKER: <b>{gs.jokerRank}{gs.jokerSuit}</b> = 0</div>
+          <div className={`tb-cur-player ${isMyTurn ? "tb-cur-me" : ""}`}>▶ {isMyTurn ? "Your Turn" : `${currentPlayerName}'s Turn`}</div>
         </div>
         <div className="tb-timer">
           <span className={`timer-ring ${timeLeft <= 10 ? "timer-urgent" : timeLeft <= 20 ? "timer-warn" : ""}`}>
@@ -861,6 +909,7 @@ function GameScreen({ roomId, myName, initialState }) {
               <div className="opp-chip-stats">
                 <span className="opp-chip-cards">🃏 {oppHand.length}</span>
                 <span className="opp-chip-score">{p.score} pts</span>
+                {(() => { const afkL = 5 - (gs.afkCounts?.[p.name] || 0); return <span className={`afk-badge ${afkL <= 1 ? "afk-danger" : afkL <= 2 ? "afk-warn" : ""}`}>❤️{afkL}</span>; })()}
               </div>
             </div>
           );
@@ -869,6 +918,14 @@ function GameScreen({ roomId, myName, initialState }) {
 
       {/* Table */}
       <div className="table-center">
+        {/* Current player indicator — above the pile box */}
+        {!gs.roundOver && (
+          <div className="current-turn-banner">
+            <span className={`ctb-name ${isMyTurn ? "ctb-me" : "ctb-other"}`}>
+              {isMyTurn ? "Your Turn!" : `${currentPlayerName}'s Turn`}
+            </span>
+          </div>
+        )}
         <div className="felt-surface">
           {/* Joker card */}
           <div className="felt-group">
@@ -929,14 +986,6 @@ function GameScreen({ roomId, myName, initialState }) {
           </div>
         </div>
 
-        {/* Current player blinking indicator — shows who's turn in the middle of screen */}
-        {!gs.roundOver && (
-          <div className="current-turn-banner">
-            <span className={`ctb-name ${isMyTurn ? "ctb-me" : "ctb-other"}`}>
-              {isMyTurn ? "Your Turn!" : `${currentPlayerName}'s Turn`}
-            </span>
-          </div>
-        )}
 
         {/* Draw choice banner — shown after dropping when draw is needed */}
         {pendingDraw && (() => {
@@ -986,6 +1035,7 @@ function GameScreen({ roomId, myName, initialState }) {
               <div className="my-info">
                 <span className="my-name">{myName}</span>
                 <span className={`my-count ${myCount <= 5 ? "low-count" : ""}`}>Count: {myCount}</span>
+                {(() => { const myLives = 5 - (gs.afkCounts?.[myName] || 0); return <span className={`afk-badge ${myLives <= 1 ? "afk-danger" : myLives <= 2 ? "afk-warn" : ""}`}>❤️{myLives}</span>; })()}
               </div>
               <div className="my-actions">
                 {/* Penalty button — always shown when 7-chain active and it's your turn */}
@@ -1044,11 +1094,9 @@ function GameScreen({ roomId, myName, initialState }) {
         )}
       </div>
 
-      {/* Scores strip — shows AFK lives for all players */}
+      {/* Scores strip — compact score view, no names or lives (shown at top) */}
       <div className="scores-strip">
         {(gs.players || []).map((p, i) => {
-          const afk = gs.afkCounts?.[p.name] || 0;
-          const livesLeft = 5 - afk;
           const isCur = p.name === currentPlayerName;
           const isMe = p.name === myName;
           return (
@@ -1056,10 +1104,8 @@ function GameScreen({ roomId, myName, initialState }) {
               {isCur && isMe && !gs.roundOver && (
                 <TimerBorder pct={(timeLeft / 60) * 100} borderR={14} sw={3} />
               )}
-              <span>{p.name}{isMe?" (you)":""}</span>
+              <span className="sc-label">{isMe ? "Me" : p.name.slice(0,4)}</span>
               <span className="sc">{p.score}</span>
-              <span className={`afk-badge ${livesLeft <= 1 ? "afk-danger" : livesLeft <= 2 ? "afk-warn" : ""}`}
-                title={`${livesLeft} AFK lives left`}>❤️{livesLeft}</span>
             </div>
           );
         })}
@@ -1438,7 +1484,7 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 .tb-left{display:flex;align-items:center;gap:6px;flex-shrink:0;}
 .tb-room{font-size:10px;letter-spacing:1px;color:rgba(240,235,224,0.4);font-weight:700;}
 .tb-round{font-size:11px;color:var(--gold);font-weight:700;}
-.tb-center{flex:1;text-align:center;}
+.tb-center{flex:1;text-align:center;display:flex;flex-direction:column;align-items:center;gap:1px;}
 .joker-info{font-size:11px;color:rgba(240,235,224,0.7);}
 .joker-info b{color:gold;}
 .tb-timer{flex-shrink:0;}
@@ -1449,6 +1495,9 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 .tb-right{flex-shrink:0;}
 .tb-score{font-size:11px;}
 .tb-score b{color:var(--gold);}
+.tb-cur-player{font-size:10px;color:rgba(240,235,224,0.55);font-weight:600;letter-spacing:0.5px;}
+.tb-cur-me{color:#2ecc71!important;}
+.sc-label{font-size:9px;color:rgba(240,235,224,0.5);}
 
 /* Opponents — horizontal scroll strip of chips */
 .others-row{display:flex;gap:6px;padding:6px 10px;overflow-x:auto;border-bottom:1px solid rgba(255,255,255,0.05);background:rgba(0,0,0,0.2);-webkit-overflow-scrolling:touch;}
@@ -1667,7 +1716,8 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
   /* Smaller joker star badge */
   .joker-star { width: 13px !important; height: 13px !important; font-size: 7px !important; top: -5px !important; right: -5px !important; }
 
-  .log-box    { display: none !important; }  /* hide log on small screens — saves space */
+  .log-box    { display: block !important; margin-top: 4px !important; max-height: 28px !important; overflow: hidden !important; }
+  .log-line   { font-size: 9px !important; color: rgba(240,235,224,0.5) !important; }
   .penalty-banner { padding: 5px 8px !important; font-size: 10px !important; margin-top: 5px !important; }
   .draw-choice-banner { padding: 5px 8px !important; font-size: 11px !important; gap: 5px !important; margin-top: 5px !important; }
   .dcb-btn { padding: 5px 10px !important; font-size: 11px !important; }
@@ -1686,40 +1736,39 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
   .act-btn   { padding: 6px 10px !important; font-size: 11px !important; }
   .wait-turn { font-size: 10px !important; margin-bottom: 3px !important; min-height: unset !important; }
 
-  /* Cards — 4 per row, compact height, vertical scroll if many cards */
+  /* Cards — single horizontal row with horizontal scroll only */
   .my-area {
     flex: 1 1 0 !important;
     min-height: 0 !important;
-    overflow: hidden !important;     /* container hides nothing — inner hand-row scrolls */
+    overflow: hidden !important;
     padding: 5px 8px 4px !important;
     display: flex !important;
     flex-direction: column !important;
   }
-  /* hand-row scrolls vertically if cards overflow */
+  /* hand-row: horizontal scroll, no wrapping */
   .hand-row {
     display: flex !important;
-    flex-wrap: wrap !important;
-    gap: 4px !important;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
+    flex-wrap: nowrap !important;
+    gap: 5px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
     -webkit-overflow-scrolling: touch !important;
-    justify-content: center !important;
-    padding: 2px 0 6px !important;
-    align-items: flex-start !important;
-    /* let it grow but scroll if needed */
-    flex: 1 1 auto !important;
+    justify-content: flex-start !important;
+    padding: 4px 0 8px !important;
+    align-items: flex-end !important;
+    flex: 0 0 auto !important;
     min-height: 0 !important;
   }
   .hand-row .card-wrap { flex: 0 0 auto !important; }
 
-  /* Cards: 4 per row, short height — compact but tappable */
+  /* Cards: fixed compact size, horizontally scrollable */
   .hand-row .card-md {
-    width:  calc((100vw - 52px) / 4) !important;
-    height: calc((100vw - 52px) / 4 * 1.3) !important;  /* slightly shorter aspect ratio */
+    width: 52px !important;
+    height: 72px !important;
   }
-  .hand-row .card-md .corner b    { font-size: clamp(9px, 2.4vw, 12px) !important; }
-  .hand-row .card-md .corner span { font-size: clamp(7px, 1.8vw, 10px) !important; }
-  .hand-row .card-md .mid-suit    { font-size: clamp(12px, 3.5vw, 18px) !important; }
+  .hand-row .card-md .corner b    { font-size: 10px !important; }
+  .hand-row .card-md .corner span { font-size: 8px !important; }
+  .hand-row .card-md .mid-suit    { font-size: 14px !important; }
   .hand-row .card-md .joker-star  {
     width: 12px !important; height: 12px !important;
     font-size: 7px !important; top: -4px !important; right: -4px !important;
