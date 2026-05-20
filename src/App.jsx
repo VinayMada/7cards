@@ -1584,102 +1584,145 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 
 /* ══════════════════════════════════════════════
    MOBILE ONLY  (≤600px)
-   Desktop layout is completely untouched above
+   Strategy: game-wrap = 100dvh flex column.
+   Every section gets a fixed or flex-shrink size.
+   Cards scale with vw so they always fit.
+   NO scrolling needed.
    ══════════════════════════════════════════════ */
 @media (max-width: 600px) {
 
-  /* 1. Opponents — 2-column grid, vertical layout */
-  .others-row {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-    padding: 8px 10px;
-    overflow-x: unset;
-    overflow-y: visible;
-  }
-  .opp-chip {
-    min-width: unset !important;
-    width: 100%;
-  }
-
-  /* 2. Game wrap — natural height, no flex stretching.
-     flex:1 on children was causing huge empty gap on iOS Safari. */
+  /* Root: full viewport, flex column, nothing overflows */
   .game-wrap {
-    display: block !important;   /* not flex — prevents children from stretching */
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100dvh !important;          /* dvh = dynamic viewport, accounts for iOS bar */
+    height: 100svh !important;          /* fallback: small viewport height */
     min-height: unset !important;
+    overflow: hidden !important;
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  /* 3. Scores strip — directly after cards, NO sticky/absolute positioning.
-     Sticky was the root cause of the gap: it reserved space at the bottom. */
-  .scores-strip {
-    position: relative !important;
-    bottom: unset !important;
-    background: rgba(8,15,13,0.98);
-    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
-    z-index: 50;
-    flex-wrap: wrap;
-    justify-content: center;
-    border-top: 1px solid rgba(255,255,255,0.06);
+  /* Top bar — fixed small height, never grows */
+  .top-bar {
+    flex-shrink: 0 !important;
+    padding: 5px 8px !important;
   }
+  .tb-room   { font-size: 9px !important; }
+  .tb-round  { font-size: 10px !important; }
+  .joker-info { font-size: 10px !important; }
+  .tb-score  { font-size: 10px !important; }
+  .timer-ring { font-size: 10px !important; padding: 2px 5px !important; }
 
-  /* 4. My hand area — height is content-driven, no flex grow */
-  .my-area {
-    flex: unset !important;
-    height: auto !important;
-    overflow-y: visible !important;
-    padding-bottom: 8px;
+  /* Opponents grid — shrinks tightly */
+  .others-row {
+    flex-shrink: 0 !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px !important;
+    padding: 4px 8px !important;
+    overflow: visible !important;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
   }
+  .opp-chip {
+    min-width: unset !important;
+    width: 100% !important;
+    padding: 4px 6px !important;  /* tighter padding */
+  }
+  .opp-chip-name   { font-size: 10px !important; }
+  .opp-chip-cards  { font-size: 10px !important; }
+  .opp-chip-score  { font-size: 10px !important; }
+  .opp-chip-top    { margin-bottom: 2px !important; }
 
-  /* 5. Table center — no flex: 1 stretching */
+  /* Table/felt — shrinks, minimal padding */
   .table-center {
+    flex-shrink: 0 !important;
     flex: unset !important;
-    height: auto !important;
+    padding: 5px 8px !important;
   }
+  .felt-surface {
+    gap: 10px !important;
+    padding: 8px 10px !important;
+    border-radius: 10px !important;
+  }
+  /* Smaller cards on the felt */
+  .felt-surface .card-sm { width: 42px !important; height: 60px !important; }
+  .felt-surface .card-sm .corner b   { font-size: 9px !important; }
+  .felt-surface .card-sm .corner span { font-size: 8px !important; }
+  .felt-surface .card-sm .mid-suit   { font-size: 13px !important; }
+  .felt-label { font-size: 8px !important; }
+  /* Smaller joker star badge */
+  .joker-star { width: 13px !important; height: 13px !important; font-size: 7px !important; top: -5px !important; right: -5px !important; }
 
-  /* 6. Cards — wrap into rows, centred */
+  .log-box    { display: none !important; }  /* hide log on small screens — saves space */
+  .penalty-banner { padding: 5px 8px !important; font-size: 10px !important; margin-top: 5px !important; }
+  .draw-choice-banner { padding: 5px 8px !important; font-size: 11px !important; gap: 5px !important; margin-top: 5px !important; }
+  .dcb-btn { padding: 5px 10px !important; font-size: 11px !important; }
+
+  /* My area — flex col, takes remaining space, no overflow */
+  .my-area {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;       /* critical: allows flex child to shrink below content */
+    overflow: hidden !important;
+    padding: 6px 8px 4px !important;
+  }
+  .my-area.elim { padding: 6px 8px !important; }
+  .my-header { margin-bottom: 3px !important; }
+  .my-name   { font-size: 13px !important; }
+  .my-count  { font-size: 11px !important; padding: 2px 10px !important; }
+  .act-btn   { padding: 6px 10px !important; font-size: 11px !important; }
+  .wait-turn { font-size: 10px !important; margin-bottom: 3px !important; min-height: unset !important; }
+
+  /* Cards — scale with viewport width, 4 per row fits most screens */
+  /* Card width = (100vw - 2*8px padding - 3*6px gaps) / 4 ≈ (100vw - 34px) / 4 */
   .hand-row {
     display: flex !important;
     flex-wrap: wrap !important;
-    gap: 8px !important;
-    overflow-x: unset !important;
-    justify-content: center;
-    padding: 6px 4px 10px !important;
+    gap: 5px !important;
+    overflow: hidden !important;
+    justify-content: center !important;
+    padding: 2px 0 4px !important;
     align-items: flex-start !important;
   }
-  .hand-row .card-wrap {
-    flex: 0 0 auto;
-  }
+  .hand-row .card-wrap { flex: 0 0 auto !important; }
+
+  /* Use vw-based sizing: 4 cards per row with gaps */
   .hand-row .card-md {
-    width: 72px !important;
-    height: 102px !important;
+    width:  calc((100vw - 56px) / 4) !important;   /* 4 per row */
+    height: calc((100vw - 56px) / 4 * 1.42) !important; /* maintain aspect ratio */
   }
-  .hand-row .card-md .corner b { font-size: 14px !important; }
-  .hand-row .card-md .corner span { font-size: 11px !important; }
-  .hand-row .card-md .mid-suit { font-size: 22px !important; }
-
-  /* 7. Table/felt — slightly more compact */
-  .felt-surface {
-    gap: 12px !important;
-    padding: 10px 12px !important;
+  .hand-row .card-md .corner b    { font-size: clamp(9px, 2.5vw, 13px) !important; }
+  .hand-row .card-md .corner span { font-size: clamp(7px, 2vw, 10px)   !important; }
+  .hand-row .card-md .mid-suit    { font-size: clamp(13px, 4vw, 20px)  !important; }
+  .hand-row .card-md .joker-star  {
+    width: 13px !important; height: 13px !important;
+    font-size: 7px !important; top: -5px !important; right: -5px !important;
   }
 
-  /* 8. Top bar text — shrink slightly */
-  .tb-room { font-size: 9px !important; }
-  .tb-round { font-size: 11px !important; }
-  .joker-info { font-size: 10px !important; }
-  .tb-score { font-size: 10px !important; }
+  /* Scores strip — fixed height at very bottom */
+  .scores-strip {
+    flex-shrink: 0 !important;
+    position: relative !important;
+    bottom: unset !important;
+    padding: 5px 8px calc(5px + env(safe-area-inset-bottom, 0px)) !important;
+    background: rgba(8,15,13,0.98) !important;
+    border-top: 1px solid rgba(255,255,255,0.06) !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    z-index: 50;
+  }
+  .score-chip { padding: 3px 8px !important; font-size: 10px !important; }
+  .afk-badge  { font-size: 8px !important; }
 }
 
-/* Extra tiny screens */
+/* Very small screens (≤360px) — 3 cards per row to keep them tappable */
 @media (max-width: 360px) {
   .hand-row .card-md {
-    width: 62px !important;
-    height: 88px !important;
+    width:  calc((100vw - 44px) / 3) !important;
+    height: calc((100vw - 44px) / 3 * 1.42) !important;
   }
-  .others-row {
-    gap: 5px;
-    padding: 6px 8px;
-  }
+  .others-row { gap: 3px !important; padding: 3px 6px !important; }
+  .opp-chip   { padding: 3px 5px !important; }
+  .top-bar    { padding: 4px 6px !important; }
 }
 `;
