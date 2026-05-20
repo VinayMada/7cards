@@ -929,6 +929,15 @@ function GameScreen({ roomId, myName, initialState }) {
           </div>
         </div>
 
+        {/* Current player blinking indicator — shows who's turn in the middle of screen */}
+        {!gs.roundOver && (
+          <div className="current-turn-banner">
+            <span className={`ctb-name ${isMyTurn ? "ctb-me" : "ctb-other"}`}>
+              {isMyTurn ? "Your Turn!" : `${currentPlayerName}'s Turn`}
+            </span>
+          </div>
+        )}
+
         {/* Draw choice banner — shown after dropping when draw is needed */}
         {pendingDraw && (() => {
           // Previous player's card is at [_droppedCount] — after current player's dropped cards
@@ -1553,6 +1562,12 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 .exit-confirm:hover{background:rgba(231,76,60,0.25);}
 
 .loading-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;color:var(--gold);font-family:'Cinzel',serif;font-size:20px;letter-spacing:3px;}
+/* Current turn banner */
+.current-turn-banner{text-align:center;padding:4px 0 2px;margin-top:4px;}
+.ctb-name{font-size:12px;font-weight:700;letter-spacing:1px;padding:3px 12px;border-radius:20px;display:inline-block;}
+.ctb-me{background:rgba(46,204,113,0.15);color:#2ecc71;border:1px solid rgba(46,204,113,0.3);animation:ctb-blink 1.2s infinite;}
+.ctb-other{background:rgba(212,168,67,0.1);color:var(--gold);border:1px solid rgba(212,168,67,0.2);animation:ctb-blink 1.2s infinite;}
+@keyframes ctb-blink{0%,100%{opacity:1;}50%{opacity:0.45;}}
 .next-round-countdown{display:flex;flex-direction:column;align-items:center;margin-top:16px;padding:16px;background:rgba(212,168,67,0.08);border:1px solid var(--border);border-radius:14px;}
 .nrc-timer{font-family:'Cinzel',serif;font-size:52px;color:var(--gold);line-height:1;font-weight:900;}
 .nrc-label{font-size:12px;color:rgba(240,235,224,0.5);letter-spacing:2px;text-transform:uppercase;margin-top:4px;}
@@ -1636,7 +1651,6 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
   /* Table/felt — shrinks, minimal padding */
   .table-center {
     flex-shrink: 0 !important;
-    flex: unset !important;
     padding: 5px 8px !important;
   }
   .felt-surface {
@@ -1672,30 +1686,43 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
   .act-btn   { padding: 6px 10px !important; font-size: 11px !important; }
   .wait-turn { font-size: 10px !important; margin-bottom: 3px !important; min-height: unset !important; }
 
-  /* Cards — scale with viewport width, 4 per row fits most screens */
-  /* Card width = (100vw - 2*8px padding - 3*6px gaps) / 4 ≈ (100vw - 34px) / 4 */
+  /* Cards — 4 per row, compact height, vertical scroll if many cards */
+  .my-area {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;     /* container hides nothing — inner hand-row scrolls */
+    padding: 5px 8px 4px !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  /* hand-row scrolls vertically if cards overflow */
   .hand-row {
     display: flex !important;
     flex-wrap: wrap !important;
-    gap: 5px !important;
-    overflow: hidden !important;
+    gap: 4px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
     justify-content: center !important;
-    padding: 2px 0 4px !important;
+    padding: 2px 0 6px !important;
     align-items: flex-start !important;
+    /* let it grow but scroll if needed */
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
   }
   .hand-row .card-wrap { flex: 0 0 auto !important; }
 
-  /* Use vw-based sizing: 4 cards per row with gaps */
+  /* Cards: 4 per row, short height — compact but tappable */
   .hand-row .card-md {
-    width:  calc((100vw - 56px) / 4) !important;   /* 4 per row */
-    height: calc((100vw - 56px) / 4 * 1.42) !important; /* maintain aspect ratio */
+    width:  calc((100vw - 52px) / 4) !important;
+    height: calc((100vw - 52px) / 4 * 1.3) !important;  /* slightly shorter aspect ratio */
   }
-  .hand-row .card-md .corner b    { font-size: clamp(9px, 2.5vw, 13px) !important; }
-  .hand-row .card-md .corner span { font-size: clamp(7px, 2vw, 10px)   !important; }
-  .hand-row .card-md .mid-suit    { font-size: clamp(13px, 4vw, 20px)  !important; }
+  .hand-row .card-md .corner b    { font-size: clamp(9px, 2.4vw, 12px) !important; }
+  .hand-row .card-md .corner span { font-size: clamp(7px, 1.8vw, 10px) !important; }
+  .hand-row .card-md .mid-suit    { font-size: clamp(12px, 3.5vw, 18px) !important; }
   .hand-row .card-md .joker-star  {
-    width: 13px !important; height: 13px !important;
-    font-size: 7px !important; top: -5px !important; right: -5px !important;
+    width: 12px !important; height: 12px !important;
+    font-size: 7px !important; top: -4px !important; right: -4px !important;
   }
 
   /* Scores strip — fixed height at very bottom */
