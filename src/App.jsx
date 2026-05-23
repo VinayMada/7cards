@@ -1791,14 +1791,42 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
   .afk-badge  { font-size: 8px !important; }
 }
 
-/* Very small screens (≤360px) — 3 cards per row to keep them tappable */
+/* Very small screens (≤360px width) — same horizontal scroll, just smaller cards */
 @media (max-width: 360px) {
   .hand-row .card-md {
-    width:  calc((100vw - 44px) / 3) !important;
-    height: calc((100vw - 44px) / 3 * 1.42) !important;
+    width: 46px !important;
+    height: 64px !important;
   }
+  .hand-row .card-md .corner b    { font-size: 9px !important; }
+  .hand-row .card-md .corner span { font-size: 7px !important; }
+  .hand-row .card-md .mid-suit    { font-size: 12px !important; }
   .others-row { gap: 3px !important; padding: 3px 6px !important; }
   .opp-chip   { padding: 3px 5px !important; }
   .top-bar    { padding: 4px 6px !important; }
+}
+
+/* Short height screens (≤700px tall) — scale cards down by available height */
+@media (max-height: 700px) {
+  .hand-row .card-md {
+    width:  calc(13dvh) !important;
+    height: calc(13dvh * 1.42) !important;
+  }
+  .hand-row .card-md .corner b    { font-size: clamp(8px, 1.5dvh, 12px) !important; }
+  .hand-row .card-md .corner span { font-size: clamp(6px, 1.2dvh, 10px) !important; }
+  .hand-row .card-md .mid-suit    { font-size: clamp(11px, 2dvh, 18px)  !important; }
+}
+
+/* Very short screens (≤620px tall) — even smaller */
+@media (max-height: 620px) {
+  .hand-row .card-md {
+    width:  calc(11dvh) !important;
+    height: calc(11dvh * 1.42) !important;
+  }
+  .felt-surface { padding: 6px 8px !important; gap: 8px !important; }
+  .felt-surface .card-sm { width: 36px !important; height: 52px !important; }
+  .opp-chip { padding: 2px 5px !important; }
+  .opp-chip-name { font-size: 9px !important; }
+  .my-name  { font-size: 12px !important; }
+  .act-btn  { padding: 5px 8px !important; font-size: 10px !important; }
 }
 `;
