@@ -378,10 +378,26 @@ function GameScreen({ roomId, myName, initialState }) {
   // const [pendingDraw, setPendingDraw] = useState(false); -- REMOVED
   const [timeLeft, setTimeLeft] = useState(60);
   const [showScoreBoard, setShowScoreBoard] = useState(false);
+  // Local hand display order — drag to reorder, sort buttons
+  const [handOrder, setHandOrder] = useState(null); // null = use natural Firebase order
+  const dragSrcIdx = useRef(null);   // display index being dragged
+  const dragOverIdx = useRef(null);  // display index being hovered over
+  const handOrderRef = useRef(null); // tracks hand length to auto-reset on change
 
   // Real-time listener
   useEffect(() => {
-    const unsub = roomListen(roomId, r => { setGs(r); setSelected([]); });
+    const unsub = roomListen(roomId, r => {
+      setGs(r);
+      setSelected([]);
+      // Reset hand order only if card count changed (new card drawn / card dropped)
+      // Use a ref to compare previous hand length
+      const prevHand = handOrderRef.current;
+      const newHand = r.hands?.[myName] || [];
+      if (!prevHand || prevHand !== newHand.length) {
+        setHandOrder(null);
+        handOrderRef.current = newHand.length;
+      }
+    });
     return unsub;
   }, [roomId]);
 
@@ -409,6 +425,12 @@ function GameScreen({ roomId, myName, initialState }) {
   const currentPlayerName = activePlayers[cpIdx]?.name;
   const isMyTurn = currentPlayerName === myName;
   const myHand = gs.hands?.[myName] || [];
+  // orderedHand: display order. handOrder stores indices into myHand.
+  const orderedHand = handOrder
+    ? handOrder.filter(i => i < myHand.length).map(i => myHand[i])
+    : myHand;
+  // Map selected (indices into orderedHand) back to real myHand indices for game logic
+  const selectedRealIndices = selected.map(si => handOrder ? handOrder[si] : si);
   const myScore = gs.players?.find(p => p.name === myName)?.score ?? 0;
   const isEliminated = gs.players?.find(p => p.name === myName)?.eliminated;
   const jokerRank = gs.jokerRank;
@@ -425,10 +447,10 @@ function GameScreen({ roomId, myName, initialState }) {
   // ── FIXED: Allow card selection even during 7-penalty so player can counter ──
   const toggleSelect = (idx) => {
     if (!isMyTurn || gs.roundOver || pendingDraw) return;
-    const card = myHand[idx];
+    const card = orderedHand[idx];
     setSelected(prev => {
       if (prev.includes(idx)) return prev.filter(i => i !== idx);
-      const allRanks = [...prev.map(i => myHand[i].rank), card.rank];
+      const allRanks = [...prev.map(i => orderedHand[i].rank), card.rank];
       if ([...new Set(allRanks)].length > 1) { flash("Select cards of the same rank only!"); return prev; }
       return [...prev, idx];
     });
@@ -452,7 +474,9 @@ function GameScreen({ roomId, myName, initialState }) {
     if (!r || r.roundOver) return;
 
     const hand = [...(r.hands[myName] || [])];
-    const dropping = selected.map(i => hand[i]);
+    // Map display-order indices back to real hand indices
+    const realSelected = handOrder ? selected.map(si => handOrder[si] ?? si) : selected;
+    const dropping = realSelected.map(i => hand[i]);
     const dropRank = dropping[0].rank;
 
     if (!dropping.every(c => c.rank === dropRank)) { flash("All dropped cards must be same rank!"); return; }
@@ -469,8 +493,8 @@ function GameScreen({ roomId, myName, initialState }) {
       if (dropRank !== "7") r.sevenPenalty = 0;
     }
 
-    // ── Remove dropped cards ──
-    [...selected].sort((a, b) => b - a).forEach(i => hand.splice(i, 1));
+    // ── Remove dropped cards (using real Firebase indices via realSelected) ──
+    [...realSelected].sort((a, b) => b - a).forEach(i => hand.splice(i, 1));
     r.discardPile = [...dropping, ...(r.discardPile || [])];
     // Store how many cards were just dropped so drawFromDiscard can find the correct previous card
     r._droppedCount = dropping.length;
@@ -847,6 +871,77 @@ function GameScreen({ roomId, myName, initialState }) {
     return `DROP ${selected.length} ${selected.length > 1 ? "CARDS" : "CARD"}${willDraw ? " → CHOOSE DRAW" : ""}${isClashDrop ? " ⚡ CLASH" : ""}`;
   })();
 
+  // ── Drag-to-reorder handlers ──
+  const onDragStart = (displayIdx) => {
+    dragSrcIdx.current = displayIdx;
+  };
+  const onDragOver = (displayIdx) => {
+    if (dragSrcIdx.current === null || dragSrcIdx.current === displayIdx) return;
+    dragOverIdx.current = displayIdx;
+    // Reorder handOrder live as user drags
+    setHandOrder(prev => {
+      const base = prev || myHand.map((_, i) => i);
+      const arr = [...base];
+      const [moved] = arr.splice(dragSrcIdx.current, 1);
+      arr.splice(displayIdx, 0, moved);
+      dragSrcIdx.current = displayIdx; // update src so continuous drag works
+      return arr;
+    });
+  };
+  const onDragEnd = () => {
+    dragSrcIdx.current = null;
+    dragOverIdx.current = null;
+  };
+
+  // Touch drag support
+  const touchStartX = useRef(null);
+  const touchDragSrc = useRef(null);
+  const handRowRef = useRef(null);
+
+  const onTouchStart = (displayIdx, e) => {
+    touchDragSrc.current = displayIdx;
+    touchStartX.current = e.touches[0].clientX;
+  };
+  const onTouchMove = (e) => {
+    if (touchDragSrc.current === null) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const row = handRowRef.current;
+    if (!row) return;
+    const cards = Array.from(row.querySelectorAll('.card-wrap'));
+    let targetIdx = null;
+    for (let i = 0; i < cards.length; i++) {
+      const rect = cards[i].getBoundingClientRect();
+      if (touch.clientX >= rect.left && touch.clientX <= rect.right) {
+        targetIdx = i; break;
+      }
+    }
+    if (targetIdx !== null && targetIdx !== touchDragSrc.current) {
+      setHandOrder(prev => {
+        const base = prev || myHand.map((_, i) => i);
+        const arr = [...base];
+        const [moved] = arr.splice(touchDragSrc.current, 1);
+        arr.splice(targetIdx, 0, moved);
+        touchDragSrc.current = targetIdx;
+        return arr;
+      });
+    }
+  };
+  const onTouchEnd = () => { touchDragSrc.current = null; };
+
+  // ── Sort handler ──
+  const sortHand = (dir) => {
+    const jokerVal = 0;
+    const indices = myHand.map((_, i) => i);
+    indices.sort((a, b) => {
+      const va = myHand[a].rank === jokerRank ? jokerVal : cardValue(myHand[a].rank);
+      const vb = myHand[b].rank === jokerRank ? jokerVal : cardValue(myHand[b].rank);
+      return dir === "asc" ? va - vb : vb - va;
+    });
+    setHandOrder(indices);
+    setSelected([]); // clear selection on sort
+  };
+
   // Instruction hint
   const hintText = (() => {
     if (!isMyTurn && !pendingDraw) return `Waiting for ${currentPlayerName}…`;
@@ -1068,20 +1163,42 @@ function GameScreen({ roomId, myName, initialState }) {
               </div>
             </div>
 
-            <div className="wait-turn">{hintText}</div>
+            <div className="wait-turn-row">
+              <span className="wait-turn">{hintText}</span>
+              {/* Sort buttons */}
+              {!pendingDraw && (
+                <span className="sort-btns">
+                  <button className="sort-btn" onClick={() => sortHand("asc")} title="Sort low to high">↑</button>
+                  <button className="sort-btn" onClick={() => sortHand("desc")} title="Sort high to low">↓</button>
+                </span>
+              )}
+            </div>
 
-            <div className={`hand-row ${pendingDraw ? "hand-locked" : ""}`}>
-              {myHand.map((card, idx) => {
-                // Cards fully locked when pendingDraw is active
+            <div
+              ref={handRowRef}
+              className={`hand-row ${pendingDraw ? "hand-locked" : ""}`}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
+            >
+              {orderedHand.map((card, displayIdx) => {
                 const canClash = !pendingDraw && isMyTurn && !penaltyActive && lastDropRank
                   && card.rank === lastDropRank && card.rank !== "7" && card.rank !== "J";
                 const canCounter = !pendingDraw && isMyTurn && penaltyActive && card.rank === "7";
+                const isDragging = dragSrcIdx.current === displayIdx;
                 return (
-                  <div key={card.id} className={`card-wrap ${canClash ? "clash-highlight" : ""} ${canCounter ? "counter-highlight" : ""}`}>
+                  <div
+                    key={card.id}
+                    className={`card-wrap ${canClash ? "clash-highlight" : ""} ${canCounter ? "counter-highlight" : ""} ${isDragging ? "card-dragging" : ""}`}
+                    draggable={!pendingDraw}
+                    onDragStart={() => onDragStart(displayIdx)}
+                    onDragOver={e => { e.preventDefault(); onDragOver(displayIdx); }}
+                    onDragEnd={onDragEnd}
+                    onTouchStart={e => onTouchStart(displayIdx, e)}
+                  >
                     <CardFace
                       card={card}
-                      selected={selected.includes(idx)}
-                      onClick={isMyTurn && !pendingDraw ? () => toggleSelect(idx) : undefined}
+                      selected={selected.includes(displayIdx)}
+                      onClick={isMyTurn && !pendingDraw ? () => toggleSelect(displayIdx) : undefined}
                       isJoker={card.rank === jokerRank}
                     />
                     {canClash && <span className="card-tip clash-tip">⚡</span>}
@@ -1645,6 +1762,12 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 ::-webkit-scrollbar{height:3px;width:3px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:rgba(212,168,67,0.3);border-radius:2px;}
+.wait-turn-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.wait-turn{font-size:12px;color:rgba(240,235,224,0.5);min-height:16px;flex:1;}
+.sort-btns{display:flex;gap:4px;flex-shrink:0;}
+.sort-btn{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:var(--cream);border-radius:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;cursor:pointer;transition:all 0.15s;}
+.sort-btn:hover{background:rgba(212,168,67,0.2);border-color:var(--gold);color:var(--gold);}
+.card-dragging{opacity:0.45;transform:scale(0.94) translateY(-6px);}
 
 /* ══════════════════════════════════════════════
    MOBILE ONLY  (≤600px)
