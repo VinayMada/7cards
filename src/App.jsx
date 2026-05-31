@@ -399,7 +399,8 @@ function GameScreen({ roomId, myName, initialState }) {
       }
     });
     return unsub;
-  }, [roomId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, myName]);
 
   // ── 1-minute turn timer — runs for ALL clients so everyone sees the countdown ──
   useEffect(() => {
@@ -429,8 +430,6 @@ function GameScreen({ roomId, myName, initialState }) {
   const orderedHand = handOrder
     ? handOrder.filter(i => i < myHand.length).map(i => myHand[i])
     : myHand;
-  // Map selected (indices into orderedHand) back to real myHand indices for game logic
-  const selectedRealIndices = selected.map(si => handOrder ? handOrder[si] : si);
   const myScore = gs.players?.find(p => p.name === myName)?.score ?? 0;
   const isEliminated = gs.players?.find(p => p.name === myName)?.eliminated;
   const jokerRank = gs.jokerRank;
