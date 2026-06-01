@@ -380,8 +380,6 @@ function GameScreen({ roomId, myName, initialState }) {
   const [showScoreBoard, setShowScoreBoard] = useState(false);
   // Local hand display order — drag to reorder, sort buttons
   const [handOrder, setHandOrder] = useState(null); // null = use natural Firebase order
-  const dragSrcIdx = useRef(null);   // display index being dragged
-  const dragOverIdx = useRef(null);  // display index being hovered over
   const handOrderRef = useRef(null); // tracks hand length to auto-reset on change
 
   // Real-time listener
@@ -391,11 +389,29 @@ function GameScreen({ roomId, myName, initialState }) {
       setSelected([]);
       // Reset hand order only if card count changed (new card drawn / card dropped)
       // Use a ref to compare previous hand length
-      const prevHand = handOrderRef.current;
       const newHand = r.hands?.[myName] || [];
-      if (!prevHand || prevHand !== newHand.length) {
-        setHandOrder(null);
-        handOrderRef.current = newHand.length;
+      const newLen = newHand.length;
+      const prevLen = handOrderRef.current;
+      if (prevLen === null) {
+        // First load — natural order
+        handOrderRef.current = newLen;
+      } else if (newLen > prevLen) {
+        // Card(s) added — append new indices at the end of current order
+        setHandOrder(prev => {
+          if (!prev) return null; // not sorted yet, stay natural
+          const existing = prev.filter(i => i < newLen);
+          for (let i = prevLen; i < newLen; i++) existing.push(i);
+          return existing;
+        });
+        handOrderRef.current = newLen;
+      } else if (newLen < prevLen) {
+        // Card(s) removed — rebuild keeping only valid indices in current order
+        setHandOrder(prev => {
+          if (!prev) return null;
+          const valid = prev.filter(i => i < newLen);
+          return valid.length === newLen ? valid : null;
+        });
+        handOrderRef.current = newLen;
       }
     });
     return unsub;
@@ -870,64 +886,6 @@ function GameScreen({ roomId, myName, initialState }) {
     return `DROP ${selected.length} ${selected.length > 1 ? "CARDS" : "CARD"}${willDraw ? " → CHOOSE DRAW" : ""}${isClashDrop ? " ⚡ CLASH" : ""}`;
   })();
 
-  // ── Drag-to-reorder handlers ──
-  const onDragStart = (displayIdx) => {
-    dragSrcIdx.current = displayIdx;
-  };
-  const onDragOver = (displayIdx) => {
-    if (dragSrcIdx.current === null || dragSrcIdx.current === displayIdx) return;
-    dragOverIdx.current = displayIdx;
-    // Reorder handOrder live as user drags
-    setHandOrder(prev => {
-      const base = prev || myHand.map((_, i) => i);
-      const arr = [...base];
-      const [moved] = arr.splice(dragSrcIdx.current, 1);
-      arr.splice(displayIdx, 0, moved);
-      dragSrcIdx.current = displayIdx; // update src so continuous drag works
-      return arr;
-    });
-  };
-  const onDragEnd = () => {
-    dragSrcIdx.current = null;
-    dragOverIdx.current = null;
-  };
-
-  // Touch drag support
-  const touchStartX = useRef(null);
-  const touchDragSrc = useRef(null);
-  const handRowRef = useRef(null);
-
-  const onTouchStart = (displayIdx, e) => {
-    touchDragSrc.current = displayIdx;
-    touchStartX.current = e.touches[0].clientX;
-  };
-  const onTouchMove = (e) => {
-    if (touchDragSrc.current === null) return;
-    e.preventDefault();
-    const touch = e.touches[0];
-    const row = handRowRef.current;
-    if (!row) return;
-    const cards = Array.from(row.querySelectorAll('.card-wrap'));
-    let targetIdx = null;
-    for (let i = 0; i < cards.length; i++) {
-      const rect = cards[i].getBoundingClientRect();
-      if (touch.clientX >= rect.left && touch.clientX <= rect.right) {
-        targetIdx = i; break;
-      }
-    }
-    if (targetIdx !== null && targetIdx !== touchDragSrc.current) {
-      setHandOrder(prev => {
-        const base = prev || myHand.map((_, i) => i);
-        const arr = [...base];
-        const [moved] = arr.splice(touchDragSrc.current, 1);
-        arr.splice(targetIdx, 0, moved);
-        touchDragSrc.current = targetIdx;
-        return arr;
-      });
-    }
-  };
-  const onTouchEnd = () => { touchDragSrc.current = null; };
-
   // ── Sort handler ──
   const sortHand = (dir) => {
     const jokerVal = 0;
@@ -1173,26 +1131,15 @@ function GameScreen({ roomId, myName, initialState }) {
               )}
             </div>
 
-            <div
-              ref={handRowRef}
-              className={`hand-row ${pendingDraw ? "hand-locked" : ""}`}
-              onTouchMove={onTouchMove}
-              onTouchEnd={onTouchEnd}
-            >
+            <div className={`hand-row ${pendingDraw ? "hand-locked" : ""}`}>
               {orderedHand.map((card, displayIdx) => {
                 const canClash = !pendingDraw && isMyTurn && !penaltyActive && lastDropRank
                   && card.rank === lastDropRank && card.rank !== "7" && card.rank !== "J";
                 const canCounter = !pendingDraw && isMyTurn && penaltyActive && card.rank === "7";
-                const isDragging = dragSrcIdx.current === displayIdx;
                 return (
                   <div
                     key={card.id}
-                    className={`card-wrap ${canClash ? "clash-highlight" : ""} ${canCounter ? "counter-highlight" : ""} ${isDragging ? "card-dragging" : ""}`}
-                    draggable={!pendingDraw}
-                    onDragStart={() => onDragStart(displayIdx)}
-                    onDragOver={e => { e.preventDefault(); onDragOver(displayIdx); }}
-                    onDragEnd={onDragEnd}
-                    onTouchStart={e => onTouchStart(displayIdx, e)}
+                    className={`card-wrap ${canClash ? "clash-highlight" : ""} ${canCounter ? "counter-highlight" : ""}`}
                   >
                     <CardFace
                       card={card}
@@ -1766,7 +1713,6 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 .sort-btns{display:flex;gap:4px;flex-shrink:0;}
 .sort-btn{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:var(--cream);border-radius:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;cursor:pointer;transition:all 0.15s;}
 .sort-btn:hover{background:rgba(212,168,67,0.2);border-color:var(--gold);color:var(--gold);}
-.card-dragging{opacity:0.45;transform:scale(0.94) translateY(-6px);}
 
 /* ══════════════════════════════════════════════
    MOBILE ONLY  (≤600px)
