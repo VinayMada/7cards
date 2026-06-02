@@ -1,33 +1,49 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <!-- viewport-fit=cover is essential for iPhone notch/home bar safe area -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#080f0d" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="description" content="Low Card – Online Multiplayer Card Game" />
-    <title>LOW CARD</title>
-    <style>
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        padding: 0;
-        background: #080f0d;
-        /* Prevent iOS bounce/overscroll */
-        overscroll-behavior: none;
-      }
-      #root {
-        min-height: 100vh;
-        min-height: 100svh;
-        /* Push content above iOS home bar */
-        padding-bottom: env(safe-area-inset-bottom, 0px);
-      }
-    </style>
-  </head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-  </body>
+
+<head>
+  <meta charset="utf-8" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#080f0d" />
+  <!-- viewport-fit=cover is essential for iPhone notch/home bar safe area -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#080f0d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="Low Card – Online Multiplayer Card Game" />
+  <title>LOW CARD</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: #080f0d;
+      /* Prevent iOS bounce/overscroll */
+      overscroll-behavior: none;
+    }
+
+    #root {
+      min-height: 100vh;
+      min-height: 100svh;
+      /* Push content above iOS home bar */
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+  </style>
+</head>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js');
+    });
+  }
+</script>
+
+<body>
+  <noscript>You need to enable JavaScript to run this app.</noscript>
+  <div id="root"></div>
+</body>
+
 </html>
