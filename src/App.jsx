@@ -869,7 +869,7 @@ function GameScreen({ roomId, myName, initialState }) {
   };
 
   // ── Derived UI values ──
-  const selectedCards = selected.map(i => myHand[i]).filter(Boolean);
+  const selectedCards = selected.map(i => orderedHand[i]).filter(Boolean);
   const selectedRank = selectedCards[0]?.rank;
   const isClashDrop = !!(lastDropRank && selectedRank === lastDropRank && selectedRank !== "7" && selectedRank !== "J");
   const counterValid = penaltyActive && isValidSevenCounter(selectedCards);
