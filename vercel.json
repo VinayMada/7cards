@@ -1,0 +1,7 @@
+{
+  "routes": [
+    { "src": "/.well-known/assetlinks.json", "dest": "/.well-known/assetlinks.json" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
+}

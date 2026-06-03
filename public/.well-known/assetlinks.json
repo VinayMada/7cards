@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "app.vinay7cards.twa",
+    "sha256_cert_fingerprints": [
+      "13:AB:CE:7C:47:A2:A3:D3:EC:43:38:17:4A:3E:FD:1D:DE:51:41:CD:CA:67:4A:7E:C5:67:75:6D:57:F3:41:F8"
+    ]
+  }
+}]

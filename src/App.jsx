@@ -1,6 +1,31 @@
 import { useState, useEffect, useRef } from "react";
 import { db } from "./firebase";
 import { ref, set, get, remove, onValue, off } from "firebase/database";
+import { AdMob, BannerAdSize, BannerAdPosition, AdLoadInfo, InterstitialAdPluginEvents, RewardAdPluginEvents } from "@capacitor-community/admob";
+
+// ─── AdMob helpers ────────────────────────────────────────────────────────────
+// Test IDs — replace with real unit IDs after AdMob app is approved
+const AD_INTERSTITIAL = "ca-app-pub-3940256099942544/1033173712";
+const AD_REWARDED     = "ca-app-pub-3940256099942544/5224354917";
+
+async function initAdMob() {
+  try {
+    await AdMob.initialize({ testingDevices: [], initializeForTesting: true });
+  } catch {}
+}
+async function showInterstitial() {
+  try {
+    await AdMob.prepareInterstitial({ adId: AD_INTERSTITIAL });
+    await AdMob.showInterstitial();
+  } catch {}
+}
+async function showRewarded(onRewarded) {
+  try {
+    await AdMob.prepareRewardVideoAd({ adId: AD_REWARDED });
+    AdMob.addListener(RewardAdPluginEvents.Rewarded, () => { onRewarded(); });
+    await AdMob.showRewardVideoAd();
+  } catch { onRewarded(); } // fallback: give reward even if ad fails
+}
 
 // ─── Card Engine ──────────────────────────────────────────────────────────────
 const SUITS = ["♠","♥","♦","♣"];
@@ -1117,6 +1142,21 @@ function GameScreen({ roomId, myName, initialState }) {
                   && lastDropRank !== "7" && !penaltyActive && (
                   <button className="act-btn show-btn" onClick={hitShow}>HIT SHOW 🎯</button>
                 )}
+                {/* Rewarded ad — shown when player has ≤2 lives left */}
+                {(() => {
+                  const myLives = 5 - (gs.afkCounts?.[myName] || 0);
+                  return myLives <= 2 && myLives > 0 && !gs.roundOver && (
+                    <button className="act-btn ad-life-btn" onClick={() => showRewarded(async () => {
+                      const r = await roomGet(roomId);
+                      if (!r) return;
+                      const counts = { ...(r.afkCounts || {}) };
+                      counts[myName] = Math.max(0, (counts[myName] || 0) - 1);
+                      r.afkCounts = counts;
+                      r.log = [`❤️ ${myName} watched an ad and got a life back!`, ...(r.log || []).slice(0, 14)];
+                      await roomSet(roomId, r);
+                    })}>📺 Watch Ad → +1 Life</button>
+                  );
+                })()}
               </div>
             </div>
 
@@ -1242,6 +1282,11 @@ function RoundOver({ gs, myName, jokerRank, onNextRound, isHost }) {
   const [countdown, setCountdown] = useState(10);
   const [started, setStarted] = useState(false);
 
+  // Show interstitial ad at start of each round-over screen
+  useEffect(() => {
+    showInterstitial();
+  }, [gs.round]);
+
   // Auto-start next round countdown (only host triggers the actual call to avoid duplicates)
   useEffect(() => {
     if (gs.gameOver) return; // no countdown on game over
@@ -1332,6 +1377,8 @@ export default function App() {
   const [roomId, setRoomId] = useState(null);
   const [myName, setMyName] = useState(null);
   const [isHost, setIsHost] = useState(false);
+
+  useEffect(() => { initAdMob(); }, []);
   const [gameState, setGameState] = useState(null);
   const [showExitModal, setShowExitModal] = useState(false);
 
@@ -1628,6 +1675,8 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 @keyframes pulse-show{0%,100%{box-shadow:0 0 0 0 rgba(46,204,113,0.5);}50%{box-shadow:0 0 0 6px rgba(46,204,113,0);}}
 .penalty-btn{background:#e74c3c;color:#fff;}
 .penalty-btn:hover{transform:translateY(-1px);}
+.ad-life-btn{background:linear-gradient(135deg,#8e44ad,#6c3483);color:#fff;animation:pulse-show 1.5s infinite;}
+.ad-life-btn:hover{transform:translateY(-1px);}
 .wait-turn{font-size:11px;color:rgba(240,235,224,0.5);margin-bottom:6px;min-height:16px;line-height:1.4;}
 .hand-row{display:flex;gap:6px;overflow-x:auto;padding:4px 0 6px;align-items:flex-end;-webkit-overflow-scrolling:touch;}
 .hand-row::-webkit-scrollbar{height:3px;}

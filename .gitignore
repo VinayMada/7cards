@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+build/
+android/
+app/
+
+# Android generated
+.gradle/
+*.apk
+*.aab
+*.idsig
+gradle/
+gradlew
+gradlew.bat
+build.gradle
+settings.gradle
+gradle.properties
+manifest-checksum.txt
+build-apk.sh
+
+# Keystore — NEVER commit this
+*.keystore
+*.jks
+
+# Vercel
+.vercel
+
+# Env
+.env*
