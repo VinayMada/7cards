@@ -5,16 +5,16 @@ node_modules/
 build/
 app/
 
-# TWA gradle files (not needed, using Capacitor)
-.gradle/
-gradle/
-gradlew
-gradlew.bat
-build.gradle
-settings.gradle
-gradle.properties
-manifest-checksum.txt
-build-apk.sh
+# TWA root-level gradle files (not needed, using Capacitor)
+/.gradle/
+/gradle/
+/gradlew
+/gradlew.bat
+/build.gradle
+/settings.gradle
+/gradle.properties
+/manifest-checksum.txt
+/build-apk.sh
 
 # APK/AAB outputs
 *.apk
