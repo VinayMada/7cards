@@ -3,14 +3,10 @@ node_modules/
 
 # Build outputs
 build/
-android/
 app/
 
-# Android generated
+# TWA gradle files (not needed, using Capacitor)
 .gradle/
-*.apk
-*.aab
-*.idsig
 gradle/
 gradlew
 gradlew.bat
@@ -19,6 +15,11 @@ settings.gradle
 gradle.properties
 manifest-checksum.txt
 build-apk.sh
+
+# APK/AAB outputs
+*.apk
+*.aab
+*.idsig
 
 # Keystore — NEVER commit this
 *.keystore
