@@ -27,7 +27,8 @@
     #root {
       min-height: 100vh;
       min-height: 100svh;
-      /* Push content above iOS home bar */
+      /* Push content below status bar and above home bar */
+      padding-top: env(safe-area-inset-top, 0px);
       padding-bottom: env(safe-area-inset-bottom, 0px);
     }
   </style>
