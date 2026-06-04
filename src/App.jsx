@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { db } from "./firebase";
 import { ref, set, get, remove, onValue, off } from "firebase/database";
 import { AdMob, RewardAdPluginEvents } from "@capacitor-community/admob";
+import { StatusBar, Style } from "@capacitor/status-bar";
 
 // ─── AdMob helpers ────────────────────────────────────────────────────────────
 // Test IDs — replace with real unit IDs after AdMob app is approved
@@ -11,6 +12,12 @@ const AD_REWARDED     = "ca-app-pub-6668442587084779/6042020548";
 async function initAdMob() {
   try {
     await AdMob.initialize({ testingDevices: [], initializeForTesting: false });
+  } catch {}
+}
+async function initStatusBar() {
+  try {
+    await StatusBar.show();
+    await StatusBar.setStyle({ style: Style.Dark });
   } catch {}
 }
 async function showInterstitial() {
@@ -1378,7 +1385,7 @@ export default function App() {
   const [myName, setMyName] = useState(null);
   const [isHost, setIsHost] = useState(false);
 
-  useEffect(() => { initAdMob(); }, []);
+  useEffect(() => { initAdMob(); initStatusBar(); }, []);
   const [gameState, setGameState] = useState(null);
   const [showExitModal, setShowExitModal] = useState(false);
 
