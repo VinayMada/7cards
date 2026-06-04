@@ -2,8 +2,8 @@
 node_modules/
 
 # Build outputs
-build/
-app/
+/build/
+/app/
 
 # TWA root-level gradle files (not needed, using Capacitor)
 /.gradle/
