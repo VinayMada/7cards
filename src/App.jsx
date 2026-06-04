@@ -1,16 +1,16 @@
 import { useState, useEffect, useRef } from "react";
 import { db } from "./firebase";
 import { ref, set, get, remove, onValue, off } from "firebase/database";
-import { AdMob, BannerAdSize, BannerAdPosition, AdLoadInfo, InterstitialAdPluginEvents, RewardAdPluginEvents } from "@capacitor-community/admob";
+import { AdMob, RewardAdPluginEvents } from "@capacitor-community/admob";
 
 // ─── AdMob helpers ────────────────────────────────────────────────────────────
 // Test IDs — replace with real unit IDs after AdMob app is approved
-const AD_INTERSTITIAL = "ca-app-pub-3940256099942544/1033173712";
-const AD_REWARDED     = "ca-app-pub-3940256099942544/5224354917";
+const AD_INTERSTITIAL = "ca-app-pub-6668442587084779/4821802598";
+const AD_REWARDED     = "ca-app-pub-6668442587084779/6042020548";
 
 async function initAdMob() {
   try {
-    await AdMob.initialize({ testingDevices: [], initializeForTesting: true });
+    await AdMob.initialize({ testingDevices: [], initializeForTesting: false });
   } catch {}
 }
 async function showInterstitial() {
