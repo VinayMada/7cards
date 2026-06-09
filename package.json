@@ -8,6 +8,7 @@
     "@capacitor/cli": "^8.4.0",
     "@capacitor/core": "^8.4.0",
     "@capacitor/status-bar": "^8.0.2",
+    "@capgo/capacitor-purchases": "^10.0.0",
     "agora-rtc-sdk-ng": "^4.24.4",
     "firebase": "^10.14.1",
     "react": "^18.3.1",

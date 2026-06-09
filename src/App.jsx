@@ -3,7 +3,7 @@ import { db } from "./firebase";
 import { ref, set, get, remove, onValue, off } from "firebase/database";
 import { AdMob, RewardAdPluginEvents } from "@capacitor-community/admob";
 import { StatusBar, Style } from "@capacitor/status-bar";
-import { Purchases, LOG_LEVEL } from "@capgo/capacitor-purchases";
+import { CapacitorPurchases } from "@capgo/capacitor-purchases";
 import { useChat, useVoice, ChatButton, ChatPopup, VoiceMicButton, VoiceIndicator } from "./Chat";
 
 // ─── AdMob helpers ────────────────────────────────────────────────────────────
@@ -28,13 +28,12 @@ async function initStatusBar() {
 }
 async function initPurchases() {
   try {
-    await Purchases.setLogLevel({ level: LOG_LEVEL.DEBUG });
-    await Purchases.configure({ apiKey: REVENUECAT_API_KEY });
+    await CapacitorPurchases.setup({ apiKey: REVENUECAT_API_KEY });
   } catch {}
 }
 async function checkSubscription() {
   try {
-    const { customerInfo } = await Purchases.getCustomerInfo();
+    const { customerInfo } = await CapacitorPurchases.getCustomerInfo();
     return customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
   } catch {
     return false;
@@ -42,13 +41,13 @@ async function checkSubscription() {
 }
 async function purchaseAdFree(onSuccess, onCancel, onError) {
   try {
-    const { offerings } = await Purchases.getOfferings();
+    const { offerings } = await CapacitorPurchases.getOfferings();
     if (!offerings.current || offerings.current.availablePackages.length === 0) {
       onError("No subscription available right now. Try again later.");
       return;
     }
     const pkg = offerings.current.availablePackages[0];
-    const { customerInfo } = await Purchases.purchasePackage({ aPackage: pkg });
+    const { customerInfo } = await CapacitorPurchases.purchasePackage({ aPackage: pkg });
     const isPremium = customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
     if (isPremium) onSuccess();
     else onError("Purchase completed but subscription not active yet. Try restoring.");
@@ -59,7 +58,7 @@ async function purchaseAdFree(onSuccess, onCancel, onError) {
 }
 async function restoreAdFree(onSuccess, onFail) {
   try {
-    const { customerInfo } = await Purchases.restorePurchases();
+    const { customerInfo } = await CapacitorPurchases.restorePurchases();
     if (customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined) onSuccess();
     else onFail("No active subscription found for this account.");
   } catch {
@@ -1823,6 +1822,38 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 .sub-btn{background:linear-gradient(135deg,#d4a843,#f0c96a);color:#080f0d;}
 .sub-btn:hover{transform:translateY(-1px);filter:brightness(1.1);}
 .sub-msg{font-size:13px;color:#f0c96a;text-align:center;margin:8px 0 0;padding:6px 10px;background:rgba(212,168,67,0.1);border-radius:6px;}
+/* ── Chat ── */
+.chat-icon-btn{background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px;position:relative;line-height:1;}
+.chat-badge{position:absolute;top:-4px;right:-4px;background:#e74c3c;color:#fff;border-radius:50%;width:14px;height:14px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1;}
+.chat-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;}
+.chat-popup{background:#0c1f18;border:1px solid rgba(212,168,67,0.3);border-radius:16px;width:100%;max-width:420px;max-height:70vh;display:flex;flex-direction:column;overflow:hidden;}
+.chat-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid rgba(212,168,67,0.15);}
+.chat-title{font-family:'Cinzel',serif;color:var(--gold);font-size:14px;letter-spacing:2px;}
+.chat-close{background:none;border:none;color:rgba(240,235,224,0.5);font-size:16px;cursor:pointer;padding:2px 6px;}
+.chat-close:hover{color:var(--cream);}
+.chat-messages{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px;min-height:0;}
+.chat-empty{color:rgba(240,235,224,0.35);font-size:13px;text-align:center;margin:auto;}
+.chat-msg{display:flex;flex-direction:column;gap:1px;}
+.chat-msg-mine .chat-msg-name{color:var(--gold);}
+.chat-msg-name{font-size:11px;font-weight:700;color:rgba(240,235,224,0.6);text-transform:uppercase;letter-spacing:0.5px;}
+.chat-msg-text{font-size:13px;color:var(--cream);word-break:break-word;}
+.chat-msg-time{font-size:10px;color:rgba(240,235,224,0.3);}
+.chat-input-row{display:flex;gap:8px;padding:10px 16px;border-top:1px solid rgba(212,168,67,0.15);}
+.chat-input{flex:1;background:rgba(255,255,255,0.07);border:1px solid rgba(212,168,67,0.2);border-radius:8px;color:var(--cream);font-size:13px;padding:8px 10px;outline:none;font-family:'Nunito',sans-serif;}
+.chat-input:focus{border-color:rgba(212,168,67,0.5);}
+.chat-send-btn{background:var(--gold);color:#080f0d;border:none;border-radius:8px;padding:8px 14px;font-weight:700;font-size:12px;cursor:pointer;font-family:'Nunito',sans-serif;}
+.chat-send-btn:hover{filter:brightness(1.1);}
+/* ── Voice ── */
+.voice-mic-btn{border:none;border-radius:6px;padding:4px 7px;font-size:13px;cursor:pointer;font-family:'Nunito',sans-serif;}
+.voice-off{background:rgba(255,255,255,0.1);color:rgba(240,235,224,0.5);}
+.voice-off:hover{background:rgba(255,255,255,0.18);color:var(--cream);}
+.voice-on{background:rgba(39,174,96,0.25);color:#2ecc71;}
+.voice-muted{background:rgba(192,57,43,0.25);color:#e74c3c;}
+.voice-controls{display:flex;align-items:center;gap:3px;}
+.voice-leave-btn{background:none;border:none;color:rgba(240,235,224,0.4);font-size:11px;cursor:pointer;padding:2px 4px;}
+.voice-leave-btn:hover{color:#e74c3c;}
+.voice-dot{font-size:10px;line-height:1;}
+.voice-speaking{animation:pulse-show 0.8s infinite;}
 .wait-turn{font-size:11px;color:rgba(240,235,224,0.5);margin-bottom:6px;min-height:16px;line-height:1.4;}
 .hand-row{display:flex;gap:6px;overflow-x:auto;padding:4px 0 6px;align-items:flex-end;-webkit-overflow-scrolling:touch;}
 .hand-row::-webkit-scrollbar{height:3px;}
