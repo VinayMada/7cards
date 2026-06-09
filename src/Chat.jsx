@@ -220,3 +220,53 @@ export function VoiceIndicator({ playerName, speakingUsers, voiceUsers }) {
     </span>
   );
 }
+
+// ─── ChatInline ────────────────────────────────────────────────────────────────
+export function ChatInline({ messages, myName, sendMessage }) {
+  const [input, setInput] = useState("");
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length]);
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    sendMessage(myName, input);
+    setInput("");
+  };
+
+  const fmt = (time) => {
+    const d = new Date(time);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
+  return (
+    <div className="chat-inline">
+      <div className="chat-inline-messages">
+        {messages.length === 0 && (
+          <span className="chat-inline-empty">No messages yet — say something!</span>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={`chat-inline-msg ${m.name === myName ? "chat-inline-mine" : ""}`}>
+            <span className="chat-inline-name">{m.name}</span>
+            <span className="chat-inline-text">{m.text}</span>
+            <span className="chat-inline-time">{fmt(m.time)}</span>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+      <div className="chat-inline-input-row">
+        <input
+          className="chat-inline-input"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleSend()}
+          placeholder="Chat with players..."
+          maxLength={200}
+        />
+        <button className="chat-inline-send" onClick={handleSend}>➤</button>
+      </div>
+    </div>
+  );
+}

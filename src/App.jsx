@@ -5,7 +5,7 @@ import { AdMob, RewardAdPluginEvents } from "@capacitor-community/admob";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { Capacitor } from "@capacitor/core";
 import { CapacitorPurchases } from "@capgo/capacitor-purchases";
-import { useChat, useVoice, ChatButton, ChatPopup, VoiceMicButton, VoiceIndicator } from "./Chat";
+import { useChat, useVoice, ChatInline, VoiceMicButton, VoiceIndicator } from "./Chat";
 
 const IS_NATIVE = Capacitor.isNativePlatform();
 
@@ -463,8 +463,7 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
   // Local hand display order — drag to reorder, sort buttons
   const [handOrder, setHandOrder] = useState(null); // null = use natural Firebase order
   const handOrderRef = useRef(null); // tracks hand length to auto-reset on change
-  const [showChat, setShowChat] = useState(false);
-  const { messages, sendMessage, unreadCount, markRead } = useChat(roomId);
+  const { messages, sendMessage } = useChat(roomId);
   const { joined: voiceJoined, muted: voiceMuted, join: joinVoice, leave: leaveVoice,
           toggleMute: toggleVoiceMute, speakingUsers } = useVoice(roomId, myName);
   const [voiceUsers, setVoiceUsers] = useState(new Set());
@@ -1067,7 +1066,6 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
               </div>
               <div className="opp-chip-stats">
                 <span className="opp-chip-cards">🃏 {oppHand.length}</span>
-                <ChatButton unreadCount={unreadCount} onClick={() => { setShowChat(true); markRead(messages.length); }} />
                 <VoiceIndicator playerName={p.name} speakingUsers={speakingUsers} voiceUsers={voiceUsers} />
                 <span className="opp-chip-score">{p.score} pts</span>
                 {(() => { const afkL = 5 - (gs.afkCounts?.[p.name] || 0); return <span className={`afk-badge ${afkL <= 1 ? "afk-danger" : afkL <= 2 ? "afk-warn" : ""}`}>❤️{afkL}</span>; })()}
@@ -1196,7 +1194,6 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
               <div className="my-info">
                 <span className="my-name">{myName}</span>
                 <span className={`my-count ${myCount <= 5 ? "low-count" : ""}`}>Count: {myCount}</span>
-                <ChatButton unreadCount={unreadCount} onClick={() => { setShowChat(true); markRead(messages.length); }} />
                 <VoiceIndicator playerName={myName} speakingUsers={speakingUsers} voiceUsers={voiceUsers} />
                 {(() => { const myLives = 5 - (gs.afkCounts?.[myName] || 0); return <span className={`afk-badge ${myLives <= 1 ? "afk-danger" : myLives <= 2 ? "afk-warn" : ""}`}>❤️{myLives}</span>; })()}
               </div>
@@ -1289,6 +1286,7 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
                 );
               })}
             </div>
+            <ChatInline messages={messages} myName={myName} sendMessage={sendMessage} />
           </>
         )}
       </div>
@@ -1368,14 +1366,6 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
           </div>
         );
       })()}
-      {showChat && (
-        <ChatPopup
-          messages={messages}
-          myName={myName}
-          sendMessage={sendMessage}
-          onClose={() => { setShowChat(false); markRead(messages.length); }}
-        />
-      )}
     </div>
   );
 }
@@ -1823,27 +1813,20 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 .sub-btn{background:linear-gradient(135deg,#d4a843,#f0c96a);color:#080f0d;}
 .sub-btn:hover{transform:translateY(-1px);filter:brightness(1.1);}
 .sub-msg{font-size:13px;color:#f0c96a;text-align:center;margin:8px 0 0;padding:6px 10px;background:rgba(212,168,67,0.1);border-radius:6px;}
-/* ── Chat ── */
-.chat-icon-btn{background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px;position:relative;line-height:1;}
-.chat-badge{position:absolute;top:-4px;right:-4px;background:#e74c3c;color:#fff;border-radius:50%;width:14px;height:14px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1;}
-.chat-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;}
-.chat-popup{background:#0c1f18;border:1px solid rgba(212,168,67,0.3);border-radius:16px;width:100%;max-width:420px;max-height:70vh;display:flex;flex-direction:column;overflow:hidden;}
-.chat-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid rgba(212,168,67,0.15);}
-.chat-title{font-family:'Cinzel',serif;color:var(--gold);font-size:14px;letter-spacing:2px;}
-.chat-close{background:none;border:none;color:rgba(240,235,224,0.5);font-size:16px;cursor:pointer;padding:2px 6px;}
-.chat-close:hover{color:var(--cream);}
-.chat-messages{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px;min-height:0;}
-.chat-empty{color:rgba(240,235,224,0.35);font-size:13px;text-align:center;margin:auto;}
-.chat-msg{display:flex;flex-direction:column;gap:1px;}
-.chat-msg-mine .chat-msg-name{color:var(--gold);}
-.chat-msg-name{font-size:11px;font-weight:700;color:rgba(240,235,224,0.6);text-transform:uppercase;letter-spacing:0.5px;}
-.chat-msg-text{font-size:13px;color:var(--cream);word-break:break-word;}
-.chat-msg-time{font-size:10px;color:rgba(240,235,224,0.3);}
-.chat-input-row{display:flex;gap:8px;padding:10px 16px;border-top:1px solid rgba(212,168,67,0.15);}
-.chat-input{flex:1;background:rgba(255,255,255,0.07);border:1px solid rgba(212,168,67,0.2);border-radius:8px;color:var(--cream);font-size:13px;padding:8px 10px;outline:none;font-family:'Nunito',sans-serif;}
-.chat-input:focus{border-color:rgba(212,168,67,0.5);}
-.chat-send-btn{background:var(--gold);color:#080f0d;border:none;border-radius:8px;padding:8px 14px;font-weight:700;font-size:12px;cursor:pointer;font-family:'Nunito',sans-serif;}
-.chat-send-btn:hover{filter:brightness(1.1);}
+/* ── Inline Chat ── */
+.chat-inline{border-top:1px solid rgba(212,168,67,0.12);margin-top:6px;padding-top:6px;}
+.chat-inline-messages{height:110px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;padding:0 4px 4px;}
+.chat-inline-empty{font-size:11px;color:rgba(240,235,224,0.25);text-align:center;margin:auto;}
+.chat-inline-msg{display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;}
+.chat-inline-name{font-size:10px;font-weight:700;color:rgba(212,168,67,0.7);text-transform:uppercase;letter-spacing:0.4px;flex-shrink:0;}
+.chat-inline-mine .chat-inline-name{color:var(--gold);}
+.chat-inline-text{font-size:12px;color:var(--cream);word-break:break-word;}
+.chat-inline-time{font-size:9px;color:rgba(240,235,224,0.25);flex-shrink:0;}
+.chat-inline-input-row{display:flex;gap:6px;margin-top:5px;}
+.chat-inline-input{flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(212,168,67,0.18);border-radius:8px;color:var(--cream);font-size:12px;padding:6px 10px;outline:none;font-family:'Nunito',sans-serif;}
+.chat-inline-input:focus{border-color:rgba(212,168,67,0.45);}
+.chat-inline-send{background:rgba(212,168,67,0.2);color:var(--gold);border:1px solid rgba(212,168,67,0.3);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;}
+.chat-inline-send:hover{background:rgba(212,168,67,0.35);}
 /* ── Voice ── */
 .voice-mic-btn{border:none;border-radius:6px;padding:4px 7px;font-size:13px;cursor:pointer;font-family:'Nunito',sans-serif;}
 .voice-off{background:rgba(255,255,255,0.1);color:rgba(240,235,224,0.5);}
