@@ -3,8 +3,11 @@ import { db } from "./firebase";
 import { ref, set, get, remove, onValue, off } from "firebase/database";
 import { AdMob, RewardAdPluginEvents } from "@capacitor-community/admob";
 import { StatusBar, Style } from "@capacitor/status-bar";
+import { Capacitor } from "@capacitor/core";
 import { CapacitorPurchases } from "@capgo/capacitor-purchases";
 import { useChat, useVoice, ChatButton, ChatPopup, VoiceMicButton, VoiceIndicator } from "./Chat";
+
+const IS_NATIVE = Capacitor.isNativePlatform();
 
 // ─── AdMob helpers ────────────────────────────────────────────────────────────
 const AD_INTERSTITIAL = "ca-app-pub-6668442587084779/4821802598";
@@ -1225,8 +1228,8 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
                   && lastDropRank !== "7" && !penaltyActive && (
                   <button className="act-btn show-btn" onClick={hitShow}>HIT SHOW 🎯</button>
                 )}
-                {/* Rewarded ad — shown when player has ≤2 lives left and not subscribed */}
-                {!isPremium && (() => {
+                {/* Rewarded ad + Remove Ads — APK only (ads don't work in browser) */}
+                {IS_NATIVE && !isPremium && (() => {
                   const myLives = 5 - (gs.afkCounts?.[myName] || 0);
                   return myLives <= 2 && myLives > 0 && !gs.roundOver && (
                     <button className="act-btn ad-life-btn" onClick={() => showRewarded(async () => {
@@ -1240,8 +1243,7 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
                     })}>📺 Watch Ad → +1 Life</button>
                   );
                 })()}
-                {/* Remove Ads button — only shown to non-subscribers */}
-                {!isPremium && (
+                {IS_NATIVE && !isPremium && (
                   <button className="act-btn sub-btn" onClick={() => setShowSubModal(true)}>⭐ Remove Ads</button>
                 )}
               </div>
