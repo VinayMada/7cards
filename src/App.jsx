@@ -3,11 +3,17 @@ import { db } from "./firebase";
 import { ref, set, get, remove, onValue, off } from "firebase/database";
 import { AdMob, RewardAdPluginEvents } from "@capacitor-community/admob";
 import { StatusBar, Style } from "@capacitor/status-bar";
+import { Purchases, LOG_LEVEL } from "@capgo/capacitor-purchases";
+import { useChat, useVoice, ChatButton, ChatPopup, VoiceMicButton, VoiceIndicator } from "./Chat";
 
 // ─── AdMob helpers ────────────────────────────────────────────────────────────
-// Test IDs — replace with real unit IDs after AdMob app is approved
 const AD_INTERSTITIAL = "ca-app-pub-6668442587084779/4821802598";
 const AD_REWARDED     = "ca-app-pub-6668442587084779/6042020548";
+
+// ─── RevenueCat (subscriptions) ───────────────────────────────────────────────
+// Get this from app.revenuecat.com → your project → API keys → Public app-specific key
+const REVENUECAT_API_KEY = "goog_REPLACE_WITH_YOUR_REVENUECAT_KEY";
+const ENTITLEMENT_ID     = "ad_free"; // must match entitlement name in RevenueCat dashboard
 
 async function initAdMob() {
   try {
@@ -20,7 +26,49 @@ async function initStatusBar() {
     await StatusBar.setStyle({ style: Style.Dark });
   } catch {}
 }
-async function showInterstitial() {
+async function initPurchases() {
+  try {
+    await Purchases.setLogLevel({ level: LOG_LEVEL.DEBUG });
+    await Purchases.configure({ apiKey: REVENUECAT_API_KEY });
+  } catch {}
+}
+async function checkSubscription() {
+  try {
+    const { customerInfo } = await Purchases.getCustomerInfo();
+    return customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
+  } catch {
+    return false;
+  }
+}
+async function purchaseAdFree(onSuccess, onCancel, onError) {
+  try {
+    const { offerings } = await Purchases.getOfferings();
+    if (!offerings.current || offerings.current.availablePackages.length === 0) {
+      onError("No subscription available right now. Try again later.");
+      return;
+    }
+    const pkg = offerings.current.availablePackages[0];
+    const { customerInfo } = await Purchases.purchasePackage({ aPackage: pkg });
+    const isPremium = customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
+    if (isPremium) onSuccess();
+    else onError("Purchase completed but subscription not active yet. Try restoring.");
+  } catch (e) {
+    if (e?.code === "1" || e?.message?.includes("cancel")) onCancel();
+    else onError("Purchase failed. Please try again.");
+  }
+}
+async function restoreAdFree(onSuccess, onFail) {
+  try {
+    const { customerInfo } = await Purchases.restorePurchases();
+    if (customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined) onSuccess();
+    else onFail("No active subscription found for this account.");
+  } catch {
+    onFail("Restore failed. Please try again.");
+  }
+}
+
+async function showInterstitial(isPremium) {
+  if (isPremium) return; // skip ads for subscribers
   try {
     await AdMob.prepareInterstitial({ adId: AD_INTERSTITIAL });
     await AdMob.showInterstitial();
@@ -402,7 +450,7 @@ function TimerBorder({ pct, borderR = 10, sw = 3 }) {
 }
 
 // ─── Game Screen ──────────────────────────────────────────────────────────────
-function GameScreen({ roomId, myName, initialState }) {
+function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }) {
   const [gs, setGs] = useState(initialState);
   const [selected, setSelected] = useState([]);
   const [flashMsg, setFlashMsg] = useState("");
@@ -413,6 +461,11 @@ function GameScreen({ roomId, myName, initialState }) {
   // Local hand display order — drag to reorder, sort buttons
   const [handOrder, setHandOrder] = useState(null); // null = use natural Firebase order
   const handOrderRef = useRef(null); // tracks hand length to auto-reset on change
+  const [showChat, setShowChat] = useState(false);
+  const { messages, sendMessage, unreadCount, markRead } = useChat(roomId);
+  const { joined: voiceJoined, muted: voiceMuted, join: joinVoice, leave: leaveVoice,
+          toggleMute: toggleVoiceMute, speakingUsers } = useVoice(roomId, myName);
+  const [voiceUsers, setVoiceUsers] = useState(new Set());
 
   // Real-time listener
   useEffect(() => {
@@ -449,6 +502,17 @@ function GameScreen({ roomId, myName, initialState }) {
     return unsub;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, myName]);
+
+  // Track which players have joined voice (stored in Firebase)
+  useEffect(() => {
+    if (!roomId) return;
+    const voiceRef = ref(db, `rooms/${roomId}/voice`);
+    const unsub = onValue(voiceRef, snap => {
+      if (!snap.exists()) { setVoiceUsers(new Set()); return; }
+      setVoiceUsers(new Set(Object.keys(snap.val()).filter(k => snap.val()[k])));
+    });
+    return unsub;
+  }, [roomId]);
 
   // ── 1-minute turn timer — runs for ALL clients so everyone sees the countdown ──
   useEffect(() => {
@@ -947,8 +1011,17 @@ function GameScreen({ roomId, myName, initialState }) {
 
   // ── Round/Game over ──
   if (gs.roundOver || gs.gameOver) {
-    return <RoundOver gs={gs} myName={myName} jokerRank={jokerRank} onNextRound={nextRound} isHost={gs.host === myName} />;
+    return <RoundOver gs={gs} myName={myName} jokerRank={jokerRank} onNextRound={nextRound} isHost={gs.host === myName} isPremium={isPremium} />;
   }
+
+  const joinVoiceAndFlag = async () => {
+    await joinVoice();
+    await set(ref(db, `rooms/${roomId}/voice/${myName}`), true);
+  };
+  const leaveVoiceAndFlag = async () => {
+    await leaveVoice();
+    await set(ref(db, `rooms/${roomId}/voice/${myName}`), false);
+  };
 
   return (
     <div className="game-wrap">
@@ -992,6 +1065,8 @@ function GameScreen({ roomId, myName, initialState }) {
               </div>
               <div className="opp-chip-stats">
                 <span className="opp-chip-cards">🃏 {oppHand.length}</span>
+                <ChatButton unreadCount={unreadCount} onClick={() => { setShowChat(true); markRead(messages.length); }} />
+                <VoiceIndicator playerName={p.name} speakingUsers={speakingUsers} voiceUsers={voiceUsers} />
                 <span className="opp-chip-score">{p.score} pts</span>
                 {(() => { const afkL = 5 - (gs.afkCounts?.[p.name] || 0); return <span className={`afk-badge ${afkL <= 1 ? "afk-danger" : afkL <= 2 ? "afk-warn" : ""}`}>❤️{afkL}</span>; })()}
               </div>
@@ -1119,6 +1194,8 @@ function GameScreen({ roomId, myName, initialState }) {
               <div className="my-info">
                 <span className="my-name">{myName}</span>
                 <span className={`my-count ${myCount <= 5 ? "low-count" : ""}`}>Count: {myCount}</span>
+                <ChatButton unreadCount={unreadCount} onClick={() => { setShowChat(true); markRead(messages.length); }} />
+                <VoiceIndicator playerName={myName} speakingUsers={speakingUsers} voiceUsers={voiceUsers} />
                 {(() => { const myLives = 5 - (gs.afkCounts?.[myName] || 0); return <span className={`afk-badge ${myLives <= 1 ? "afk-danger" : myLives <= 2 ? "afk-warn" : ""}`}>❤️{myLives}</span>; })()}
               </div>
               <div className="my-actions">
@@ -1149,8 +1226,8 @@ function GameScreen({ roomId, myName, initialState }) {
                   && lastDropRank !== "7" && !penaltyActive && (
                   <button className="act-btn show-btn" onClick={hitShow}>HIT SHOW 🎯</button>
                 )}
-                {/* Rewarded ad — shown when player has ≤2 lives left */}
-                {(() => {
+                {/* Rewarded ad — shown when player has ≤2 lives left and not subscribed */}
+                {!isPremium && (() => {
                   const myLives = 5 - (gs.afkCounts?.[myName] || 0);
                   return myLives <= 2 && myLives > 0 && !gs.roundOver && (
                     <button className="act-btn ad-life-btn" onClick={() => showRewarded(async () => {
@@ -1164,6 +1241,10 @@ function GameScreen({ roomId, myName, initialState }) {
                     })}>📺 Watch Ad → +1 Life</button>
                   );
                 })()}
+                {/* Remove Ads button — only shown to non-subscribers */}
+                {!isPremium && (
+                  <button className="act-btn sub-btn" onClick={() => setShowSubModal(true)}>⭐ Remove Ads</button>
+                )}
               </div>
             </div>
 
@@ -1176,6 +1257,13 @@ function GameScreen({ roomId, myName, initialState }) {
                   <button className="sort-btn" onClick={() => sortHand("desc")} title="Sort high to low">↓</button>
                 </span>
               )}
+              <VoiceMicButton
+                joined={voiceJoined}
+                muted={voiceMuted}
+                onJoin={joinVoiceAndFlag}
+                onLeave={leaveVoiceAndFlag}
+                onToggleMute={toggleVoiceMute}
+              />
             </div>
 
             <div className={`hand-row ${pendingDraw ? "hand-locked" : ""}`}>
@@ -1279,19 +1367,28 @@ function GameScreen({ roomId, myName, initialState }) {
           </div>
         );
       })()}
+      {showChat && (
+        <ChatPopup
+          messages={messages}
+          myName={myName}
+          sendMessage={sendMessage}
+          onClose={() => { setShowChat(false); markRead(messages.length); }}
+        />
+      )}
     </div>
   );
 }
 
 // ─── Round Over ───────────────────────────────────────────────────────────────
-function RoundOver({ gs, myName, jokerRank, onNextRound, isHost }) {
+function RoundOver({ gs, myName, jokerRank, onNextRound, isHost, isPremium }) {
   const active = (gs.players || []).filter(p => !p.eliminated);
   const [countdown, setCountdown] = useState(10);
   const [started, setStarted] = useState(false);
 
-  // Show interstitial ad at start of each round-over screen
+  // Show interstitial ad at start of each round-over screen (skipped for subscribers)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    showInterstitial();
+    showInterstitial(isPremium);
   }, [gs.round]);
 
   // Auto-start next round countdown (only host triggers the actual call to avoid duplicates)
@@ -1384,8 +1481,15 @@ export default function App() {
   const [roomId, setRoomId] = useState(null);
   const [myName, setMyName] = useState(null);
   const [isHost, setIsHost] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
+  const [showSubModal, setShowSubModal] = useState(false);
+  const [subMsg, setSubMsg] = useState(null);
 
-  useEffect(() => { initAdMob(); initStatusBar(); }, []);
+  useEffect(() => {
+    initAdMob();
+    initStatusBar();
+    initPurchases().then(() => checkSubscription().then(setIsPremium));
+  }, []);
   const [gameState, setGameState] = useState(null);
   const [showExitModal, setShowExitModal] = useState(false);
 
@@ -1479,7 +1583,7 @@ export default function App() {
       <style>{CSS}</style>
       {phase === "lobby"   && <Lobby onJoin={handleJoin} />}
       {phase === "waiting" && <WaitingRoom roomId={roomId} myName={myName} isHost={isHost} onGameStart={handleGameStart} />}
-      {phase === "game"    && <GameScreen roomId={roomId} myName={myName} initialState={gameState} />}
+      {phase === "game"    && <GameScreen roomId={roomId} myName={myName} initialState={gameState} isPremium={isPremium} setShowSubModal={setShowSubModal} />}
 
       {/* ── Exit Warning Modal ── */}
       {showExitModal && (
@@ -1495,6 +1599,38 @@ export default function App() {
             <div className="exit-actions">
               <button className="exit-cancel" onClick={cancelExit}>Stay in Game</button>
               <button className="exit-confirm" onClick={confirmExit}>Leave Anyway</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Subscription Modal ── */}
+      {showSubModal && (
+        <div className="exit-overlay" onClick={() => { setShowSubModal(false); setSubMsg(null); }}>
+          <div className="exit-modal" onClick={e => e.stopPropagation()}>
+            <div className="exit-icon">⭐</div>
+            <h2 className="exit-title">Remove Ads</h2>
+            <p className="exit-body">
+              Enjoy LowCard ad-free! Subscribe once and never see ads again — on any device.
+            </p>
+            {subMsg && <p className="sub-msg">{subMsg}</p>}
+            <div className="exit-actions" style={{flexDirection:"column",gap:"10px"}}>
+              <button className="exit-confirm" style={{background:"#d4a843",color:"#080f0d"}} onClick={() => {
+                setSubMsg(null);
+                purchaseAdFree(
+                  () => { setIsPremium(true); setShowSubModal(false); setSubMsg(null); },
+                  () => setSubMsg("Purchase cancelled."),
+                  (err) => setSubMsg(err)
+                );
+              }}>Subscribe — Remove Ads</button>
+              <button className="exit-cancel" style={{fontSize:"12px",opacity:0.7}} onClick={() => {
+                setSubMsg("Restoring...");
+                restoreAdFree(
+                  () => { setIsPremium(true); setShowSubModal(false); setSubMsg(null); },
+                  (err) => setSubMsg(err)
+                );
+              }}>Restore Purchase</button>
+              <button className="exit-cancel" onClick={() => { setShowSubModal(false); setSubMsg(null); }}>Not Now</button>
             </div>
           </div>
         </div>
@@ -1684,6 +1820,9 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 .penalty-btn:hover{transform:translateY(-1px);}
 .ad-life-btn{background:linear-gradient(135deg,#8e44ad,#6c3483);color:#fff;animation:pulse-show 1.5s infinite;}
 .ad-life-btn:hover{transform:translateY(-1px);}
+.sub-btn{background:linear-gradient(135deg,#d4a843,#f0c96a);color:#080f0d;}
+.sub-btn:hover{transform:translateY(-1px);filter:brightness(1.1);}
+.sub-msg{font-size:13px;color:#f0c96a;text-align:center;margin:8px 0 0;padding:6px 10px;background:rgba(212,168,67,0.1);border-radius:6px;}
 .wait-turn{font-size:11px;color:rgba(240,235,224,0.5);margin-bottom:6px;min-height:16px;line-height:1.4;}
 .hand-row{display:flex;gap:6px;overflow-x:auto;padding:4px 0 6px;align-items:flex-end;-webkit-overflow-scrolling:touch;}
 .hand-row::-webkit-scrollbar{height:3px;}
