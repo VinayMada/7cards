@@ -1385,10 +1385,9 @@ function RoundOver({ gs, myName, jokerRank, onNextRound, isHost, isPremium }) {
   const [started, setStarted] = useState(false);
 
   // Show interstitial ad at start of each round-over screen (skipped for subscribers)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     showInterstitial(isPremium);
-  }, [gs.round]);
+  }, [gs.round, isPremium]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-start next round countdown (only host triggers the actual call to avoid duplicates)
   useEffect(() => {
