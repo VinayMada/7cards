@@ -101,8 +101,17 @@ export function useVoice(roomId, myName) {
       return;
     }
 
+    let agoraToken = null;
     try {
-      await client.join(AGORA_APP_ID, roomId, null, myName);
+      const resp = await fetch(`/api/agora-token?channel=${encodeURIComponent(roomId)}`);
+      const data = await resp.json();
+      agoraToken = data.token || null;
+    } catch (_) {
+      // fall back to null token (works only if Agora project has no certificate)
+    }
+
+    try {
+      await client.join(AGORA_APP_ID, roomId, agoraToken, myName);
       trackRef.current = track;
       await client.publish(track);
       client.enableAudioVolumeIndicator();
