@@ -82,8 +82,25 @@ export function useVoice(roomId, myName) {
       setVoiceError("Voice not configured");
       return;
     }
+    setVoiceError(null);
+
+    // Must request mic permission FIRST — before any network await —
+    // so the browser permission dialog fires within the user gesture context.
+    // Without this, mobile browsers silently fail instead of prompting.
     try {
-      setVoiceError(null);
+      const preStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      preStream.getTracks().forEach(t => t.stop());
+    } catch (permErr) {
+      const n = permErr?.name || "";
+      setVoiceError(
+        n === "NotAllowedError" ? "Mic permission denied — allow in browser settings" :
+        n === "NotFoundError"   ? "No microphone detected" :
+        `Mic error: ${n || permErr?.message || "unknown"}`
+      );
+      return;
+    }
+
+    try {
       await client.join(AGORA_APP_ID, roomId, null, myName);
       const track = await AgoraRTC.createMicrophoneAudioTrack();
       trackRef.current = track;
@@ -93,7 +110,13 @@ export function useVoice(roomId, myName) {
       setMuted(false);
     } catch (e) {
       console.error("Voice join failed:", e);
-      setVoiceError(e?.message?.includes("PERMISSION") ? "Allow mic in settings" : "Mic unavailable");
+      const code = e?.code || "";
+      const msg  = e?.message || "";
+      setVoiceError(
+        code === "PERMISSION_DENIED" || msg.toLowerCase().includes("permission") ? "Mic permission denied" :
+        msg.toLowerCase().includes("use") ? "Mic in use by another app" :
+        `Voice error: ${code || msg || "unknown"}`
+      );
     }
   };
 
