@@ -3,7 +3,7 @@ import { ref, push, onValue } from "firebase/database";
 import { db } from "./firebase";
 import AgoraRTC from "agora-rtc-sdk-ng";
 
-const AGORA_APP_ID = process.env.REACT_APP_AGORA_APP_ID;
+const AGORA_APP_ID = process.env.REACT_APP_AGORA_APP_ID || "e1b7d0479d5b4b86a8dafd3b197eefab";
 
 // ─── Text Chat Hook ────────────────────────────────────────────────────────────
 export function useChat(roomId) {
