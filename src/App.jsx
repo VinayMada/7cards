@@ -465,7 +465,7 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
   const handOrderRef = useRef(null); // tracks hand length to auto-reset on change
   const { messages, sendMessage } = useChat(roomId);
   const { joined: voiceJoined, muted: voiceMuted, join: joinVoice, leave: leaveVoice,
-          toggleMute: toggleVoiceMute, speakingUsers } = useVoice(roomId, myName);
+          toggleMute: toggleVoiceMute, speakingUsers, voiceError } = useVoice(roomId, myName);
   const [voiceUsers, setVoiceUsers] = useState(new Set());
 
   // Real-time listener
@@ -1261,6 +1261,7 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
                 onJoin={joinVoiceAndFlag}
                 onLeave={leaveVoiceAndFlag}
                 onToggleMute={toggleVoiceMute}
+                error={voiceError}
               />
             </div>
 
@@ -1823,10 +1824,12 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 .chat-inline-text{font-size:12px;color:var(--cream);word-break:break-word;}
 .chat-inline-time{font-size:9px;color:rgba(240,235,224,0.25);flex-shrink:0;}
 .chat-inline-input-row{display:flex;gap:6px;margin-top:5px;}
-.chat-inline-input{flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(212,168,67,0.18);border-radius:8px;color:var(--cream);font-size:12px;padding:6px 10px;outline:none;font-family:'Nunito',sans-serif;}
+.chat-inline-input{flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(212,168,67,0.18);border-radius:8px;color:var(--cream);font-size:16px;padding:6px 10px;outline:none;font-family:'Nunito',sans-serif;}
 .chat-inline-input:focus{border-color:rgba(212,168,67,0.45);}
 .chat-inline-send{background:rgba(212,168,67,0.2);color:var(--gold);border:1px solid rgba(212,168,67,0.3);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;}
 .chat-inline-send:hover{background:rgba(212,168,67,0.35);}
+.chat-toggle-btn{background:rgba(255,255,255,0.06);border:1px solid rgba(212,168,67,0.18);border-radius:8px;color:rgba(240,235,224,0.6);font-size:13px;padding:6px 8px;cursor:pointer;white-space:nowrap;flex-shrink:0;}
+.chat-has-unread{background:rgba(212,168,67,0.2);border-color:rgba(212,168,67,0.45);color:var(--gold);}
 /* ── Voice ── */
 .voice-mic-btn{border:none;border-radius:6px;padding:4px 7px;font-size:13px;cursor:pointer;font-family:'Nunito',sans-serif;}
 .voice-off{background:rgba(255,255,255,0.1);color:rgba(240,235,224,0.5);}
@@ -1838,6 +1841,7 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 .voice-leave-btn:hover{color:#e74c3c;}
 .voice-dot{font-size:10px;line-height:1;}
 .voice-speaking{animation:pulse-show 0.8s infinite;}
+.voice-error-msg{font-size:11px;color:#e74c3c;cursor:help;}
 .wait-turn{font-size:11px;color:rgba(240,235,224,0.5);margin-bottom:6px;min-height:16px;line-height:1.4;}
 .hand-row{display:flex;gap:6px;overflow-x:auto;padding:4px 0 6px;align-items:flex-end;-webkit-overflow-scrolling:touch;}
 .hand-row::-webkit-scrollbar{height:3px;}

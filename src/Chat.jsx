@@ -45,6 +45,7 @@ export function useVoice(roomId, myName) {
   const [joined, setJoined] = useState(false);
   const [muted, setMuted] = useState(false);
   const [speakingUsers, setSpeakingUsers] = useState(new Set());
+  const [voiceError, setVoiceError] = useState(null);
   const clientRef = useRef(null);
   const trackRef = useRef(null);
 
@@ -77,7 +78,12 @@ export function useVoice(roomId, myName) {
   const join = async () => {
     const client = clientRef.current;
     if (!client || joined) return;
+    if (!AGORA_APP_ID) {
+      setVoiceError("Voice not configured");
+      return;
+    }
     try {
+      setVoiceError(null);
       await client.join(AGORA_APP_ID, roomId, null, myName);
       const track = await AgoraRTC.createMicrophoneAudioTrack();
       trackRef.current = track;
@@ -87,6 +93,7 @@ export function useVoice(roomId, myName) {
       setMuted(false);
     } catch (e) {
       console.error("Voice join failed:", e);
+      setVoiceError(e?.message?.includes("PERMISSION") ? "Allow mic in settings" : "Mic unavailable");
     }
   };
 
@@ -110,7 +117,7 @@ export function useVoice(roomId, myName) {
     setMuted(newMuted);
   };
 
-  return { joined, muted, join, leave, toggleMute, speakingUsers };
+  return { joined, muted, join, leave, toggleMute, speakingUsers, voiceError };
 }
 
 // ─── ChatButton ────────────────────────────────────────────────────────────────
@@ -187,24 +194,24 @@ export function ChatPopup({ messages, myName, sendMessage, onClose }) {
 }
 
 // ─── VoiceMicButton ────────────────────────────────────────────────────────────
-export function VoiceMicButton({ joined, muted, onJoin, onLeave, onToggleMute }) {
-  if (!joined) {
-    return (
-      <button className="voice-mic-btn voice-off" onClick={onJoin} title="Join voice chat">
-        🎤
-      </button>
-    );
-  }
+export function VoiceMicButton({ joined, muted, onJoin, onLeave, onToggleMute, error }) {
   return (
     <span className="voice-controls">
-      <button
-        className={`voice-mic-btn ${muted ? "voice-muted" : "voice-on"}`}
-        onClick={onToggleMute}
-        title={muted ? "Unmute" : "Mute"}
-      >
-        {muted ? "🔇" : "🎤"}
-      </button>
-      <button className="voice-leave-btn" onClick={onLeave} title="Leave voice">✕</button>
+      {!joined ? (
+        <button className="voice-mic-btn voice-off" onClick={onJoin} title="Join voice chat">🎤</button>
+      ) : (
+        <>
+          <button
+            className={`voice-mic-btn ${muted ? "voice-muted" : "voice-on"}`}
+            onClick={onToggleMute}
+            title={muted ? "Unmute" : "Mute"}
+          >
+            {muted ? "🔇" : "🎤"}
+          </button>
+          <button className="voice-leave-btn" onClick={onLeave} title="Leave voice">✕</button>
+        </>
+      )}
+      {error && <span className="voice-error-msg" title={error}>⚠️</span>}
     </span>
   );
 }
@@ -224,45 +231,57 @@ export function VoiceIndicator({ playerName, speakingUsers, voiceUsers }) {
 // ─── ChatInline ────────────────────────────────────────────────────────────────
 export function ChatInline({ messages, myName, sendMessage }) {
   const [input, setInput] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const [lastSeen, setLastSeen] = useState(0);
   const bottomRef = useRef(null);
+  const unread = messages.length - lastSeen;
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+    if (expanded) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      setLastSeen(messages.length);
+    }
+  }, [messages.length, expanded]);
 
   const handleSend = () => {
     if (!input.trim()) return;
     sendMessage(myName, input);
     setInput("");
+    setExpanded(true);
+    setLastSeen(messages.length + 1);
   };
 
-  const fmt = (time) => {
-    const d = new Date(time);
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  };
+  const fmt = (time) => new Date(time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   return (
     <div className="chat-inline">
-      <div className="chat-inline-messages">
-        {messages.length === 0 && (
-          <span className="chat-inline-empty">No messages yet — say something!</span>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} className={`chat-inline-msg ${m.name === myName ? "chat-inline-mine" : ""}`}>
-            <span className="chat-inline-name">{m.name}</span>
-            <span className="chat-inline-text">{m.text}</span>
-            <span className="chat-inline-time">{fmt(m.time)}</span>
-          </div>
-        ))}
-        <div ref={bottomRef} />
-      </div>
+      {expanded && (
+        <div className="chat-inline-messages">
+          {messages.length === 0 && <span className="chat-inline-empty">No messages yet</span>}
+          {messages.map((m, i) => (
+            <div key={i} className={`chat-inline-msg ${m.name === myName ? "chat-inline-mine" : ""}`}>
+              <span className="chat-inline-name">{m.name}</span>
+              <span className="chat-inline-text">{m.text}</span>
+              <span className="chat-inline-time">{fmt(m.time)}</span>
+            </div>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+      )}
       <div className="chat-inline-input-row">
+        <button
+          className={`chat-toggle-btn ${unread > 0 && !expanded ? "chat-has-unread" : ""}`}
+          onClick={() => { setExpanded(e => !e); setLastSeen(messages.length); }}
+        >
+          💬{unread > 0 && !expanded ? ` ${unread}` : ""}
+        </button>
         <input
           className="chat-inline-input"
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === "Enter" && handleSend()}
-          placeholder="Chat with players..."
+          onFocus={() => setExpanded(true)}
+          placeholder="Chat..."
           maxLength={200}
         />
         <button className="chat-inline-send" onClick={handleSend}>➤</button>
