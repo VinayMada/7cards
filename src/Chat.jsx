@@ -84,25 +84,25 @@ export function useVoice(roomId, myName) {
     }
     setVoiceError(null);
 
-    // Must request mic permission FIRST — before any network await —
-    // so the browser permission dialog fires within the user gesture context.
-    // Without this, mobile browsers silently fail instead of prompting.
+    // Create the mic track FIRST — it's the first await so we're still within
+    // the user gesture context, which triggers the permission dialog on mobile.
+    // Joining the channel second avoids double getUserMedia + device release timing issues.
+    let track;
     try {
-      const preStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      preStream.getTracks().forEach(t => t.stop());
-    } catch (permErr) {
-      const n = permErr?.name || "";
+      track = await AgoraRTC.createMicrophoneAudioTrack();
+    } catch (e) {
+      console.error("Mic track error:", e);
+      const n = e?.name || e?.code || "";
       setVoiceError(
-        n === "NotAllowedError" ? "Mic permission denied — allow in browser settings" :
-        n === "NotFoundError"   ? "No microphone detected" :
-        `Mic error: ${n || permErr?.message || "unknown"}`
+        n === "NotAllowedError" || n === "PERMISSION_DENIED" ? "Mic permission denied — allow in browser settings" :
+        n === "NotFoundError" ? "No microphone detected" :
+        `Mic error: ${n || e?.message || "unknown"}`
       );
       return;
     }
 
     try {
       await client.join(AGORA_APP_ID, roomId, null, myName);
-      const track = await AgoraRTC.createMicrophoneAudioTrack();
       trackRef.current = track;
       await client.publish(track);
       client.enableAudioVolumeIndicator();
@@ -110,13 +110,10 @@ export function useVoice(roomId, myName) {
       setMuted(false);
     } catch (e) {
       console.error("Voice join failed:", e);
+      track.stop(); track.close();
       const code = e?.code || "";
       const msg  = e?.message || "";
-      setVoiceError(
-        code === "PERMISSION_DENIED" || msg.toLowerCase().includes("permission") ? "Mic permission denied" :
-        msg.toLowerCase().includes("use") ? "Mic in use by another app" :
-        `Voice error: ${code || msg || "unknown"}`
-      );
+      setVoiceError(`Voice error: ${code || msg || "unknown"}`);
     }
   };
 
