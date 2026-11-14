@@ -925,8 +925,6 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
     // ── Call Show when bot hand sums to 0 ──
     const botCount = handScore(hand, r.jokerRank);
     if (botCount === 0 && !(r.sevenPenalty || 0) && !r._awaitingDraw) {
-      const others = r.players.filter(p => !p.eliminated && p.name !== botName);
-      const someoneBetter = others.some(p => handScore(r.hands[p.name] || [], r.jokerRank) < 0); // 0 is minimum, never true
       let newPlayers = r.players.map(p => {
         if (p.eliminated) return p;
         const add = p.name === botName ? 0 : handScore(r.hands[p.name] || [], r.jokerRank);
