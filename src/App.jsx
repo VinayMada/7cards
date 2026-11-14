@@ -292,6 +292,15 @@ function WaitingRoom({ roomId, myName, isHost, onGameStart }) {
     return unsub;
   }, [roomId, onGameStart]);
 
+  const addBot = async () => {
+    const r = await roomGet(roomId);
+    if (!r || r.players.length >= r.maxPlayers) return;
+    const botNums = r.players.filter(p => p.isBot).map(p => parseInt(p.name.replace("Bot ", "")) || 0);
+    const nextNum = botNums.length ? Math.max(...botNums) + 1 : 1;
+    r.players.push({ name: `Bot ${nextNum}`, score: 0, eliminated: false, isBot: true });
+    await roomSet(roomId, r);
+  };
+
   const startGame = async () => {
     const r = await roomGet(roomId);
     if (!r || r.players.length < 2) return;
@@ -338,6 +347,7 @@ function WaitingRoom({ roomId, myName, isHost, onGameStart }) {
           {room.players.map((p, i) => (
             <div key={i} className={`pl-item ${p.name === room.host ? "host" : ""}`}>
               <span>{p.name}</span>
+              {p.isBot && <span className="bot-badge">🤖 BOT</span>}
               {p.name === room.host && <span className="host-badge">HOST</span>}
               {p.name === myName && <span className="you-badge">YOU</span>}
               {isHost && p.name !== myName && (
@@ -351,6 +361,9 @@ function WaitingRoom({ roomId, myName, isHost, onGameStart }) {
             </div>
           ))}
         </div>
+        {isHost && room.players.length < room.maxPlayers && (
+          <button className="add-bot-btn" onClick={addBot}>🤖 Add Bot</button>
+        )}
         <div className="room-meta">Card Sets: <b>{room.numSets}</b> · Eliminated at: <b>{room.maxScore} pts</b></div>
         {isHost && room.players.length >= 2 && <button className="cta" onClick={startGame}>START GAME ▶</button>}
         {isHost && room.players.length < 2 && <p className="wait-hint">Need at least 2 players…</p>}
@@ -878,6 +891,172 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
     await roomSet(roomId, r);
   };
 
+  // ── Bot: draw from pile (safety net for interrupted bot turns) ──
+  const botDrawFromPile = async (botName) => {
+    const r = await roomGet(roomId);
+    if (!r || r._awaitingDraw !== botName) return;
+    const skipCount = r._pendingSkip || 0;
+    const curIdx = r._pendingPlayer || 0;
+    const aPlayers = r.players.filter(p => !p.eliminated);
+    const hand = [...(r.hands[botName] || [])];
+    reshuffleIfNeeded(r);
+    if (r.drawPile.length > 0) hand.push(r.drawPile.shift());
+    r.hands[botName] = hand;
+    r.currentPlayer = computeNext(curIdx, skipCount, aPlayers.length);
+    r.currentPlayerName = aPlayers[r.currentPlayer]?.name;
+    r.turnStartedAt = Date.now();
+    r._awaitingDraw = null; r._pendingSkip = null; r._pendingPlayer = null; r._droppedCount = null;
+    await roomSet(roomId, r);
+  };
+
+  // ── Bot: execute a full turn ──
+  const executeBotTurn = async (botName) => {
+    const r = await roomGet(roomId);
+    if (!r || r.roundOver || r.currentPlayerName !== botName) return;
+    if (!r.players?.find(p => p.name === botName && p.isBot)) return;
+
+    const hand = [...(r.hands[botName] || [])];
+    if (!hand.length) return;
+
+    const aPlayers = r.players.filter(p => !p.eliminated);
+    const curIdx = r.currentPlayer % Math.max(aPlayers.length, 1);
+    let skipCount = 0;
+
+    // ── Call Show when bot hand sums to 0 ──
+    const botCount = handScore(hand, r.jokerRank);
+    if (botCount === 0 && !(r.sevenPenalty || 0) && !r._awaitingDraw) {
+      const others = r.players.filter(p => !p.eliminated && p.name !== botName);
+      const someoneBetter = others.some(p => handScore(r.hands[p.name] || [], r.jokerRank) < 0); // 0 is minimum, never true
+      let newPlayers = r.players.map(p => {
+        if (p.eliminated) return p;
+        const add = p.name === botName ? 0 : handScore(r.hands[p.name] || [], r.jokerRank);
+        return { ...p, score: p.score + add, lastAdd: add };
+      });
+      newPlayers = newPlayers.map(p => ({ ...p, eliminated: p.eliminated || p.score >= r.maxScore }));
+      const remaining = newPlayers.filter(p => !p.eliminated);
+      const gameOver = remaining.length <= 1;
+      const hostEliminated = newPlayers.find(p => p.name === r.host)?.eliminated;
+      if (hostEliminated && remaining.length > 0)
+        r.host = remaining.reduce((a, b) => a.score <= b.score ? a : b).name;
+      r.players = newPlayers;
+      r.showCaller = botName;
+      r.roundOver = true;
+      r.gameOver = gameOver;
+      r.winner = gameOver ? (remaining[0]?.name || null) : null;
+      const roundScores = {};
+      r.players.forEach(p => { roundScores[p.name] = p.lastAdd != null ? p.lastAdd : 0; });
+      r.roundHistory = [...(r.roundHistory || []), { round: r.round, scores: roundScores }];
+      r.log = [`🤖 ${botName} hit SHOW with count 0! 🎉`, ...(r.log || []).slice(0, 14)];
+      await roomSet(roomId, r);
+      return;
+    }
+
+    // ── 7-penalty: counter or take penalty ──
+    if ((r.sevenPenalty || 0) > 0) {
+      const sevens = hand.filter(c => c.rank === "7");
+      const rankCounts = {};
+      hand.forEach(c => { rankCounts[c.rank] = (rankCounts[c.rank] || 0) + 1; });
+      const tackleRank = Object.keys(rankCounts).find(rk => rankCounts[rk] >= 3 && rk !== "7");
+
+      if (sevens.length > 0) {
+        sevens.forEach(s => hand.splice(hand.findIndex(c => c.id === s.id), 1));
+        r.discardPile = [...sevens, ...(r.discardPile || [])];
+        r.sevenPenalty = (r.sevenPenalty || 0) + sevens.length;
+        r.lastDropRank = "7";
+        if (!hand.length) { reshuffleIfNeeded(r); if (r.drawPile.length > 0) hand.push(r.drawPile.shift()); }
+        r.log = [`🤖 ${botName} forwarded ${sevens.length} seven${sevens.length > 1 ? "s" : ""}`, ...(r.log || []).slice(0, 14)];
+      } else if (tackleRank) {
+        const tackleCards = hand.filter(c => c.rank === tackleRank).slice(0, 3);
+        tackleCards.forEach(c => hand.splice(hand.findIndex(x => x.id === c.id), 1));
+        r.discardPile = [...tackleCards, ...(r.discardPile || [])];
+        r.sevenPenalty = 0;
+        r.lastDropRank = tackleRank;
+        reshuffleIfNeeded(r);
+        if (r.drawPile.length > 0) hand.push(r.drawPile.shift());
+        r.log = [`🤖 ${botName} tackled 7-chain with ${tackleCards.map(c => c.rank + c.suit).join(",")}`, ...(r.log || []).slice(0, 14)];
+      } else {
+        const pen = r.sevenPenalty * 2;
+        reshuffleIfNeeded(r);
+        for (let i = 0; i < pen && r.drawPile.length > 0; i++) { hand.push(r.drawPile.shift()); reshuffleIfNeeded(r); }
+        r.sevenPenalty = 0;
+        r.lastDropRank = null;
+        r.log = [`🤖 ${botName} drew ${pen} penalty cards`, ...(r.log || []).slice(0, 14)];
+      }
+      r.hands[botName] = hand;
+    } else {
+      // ── Normal turn ──
+      const lastDR = r.lastDropRank;
+
+      // Try clash first (drop same rank as last dropped card — no draw needed)
+      if (lastDR && lastDR !== "7" && lastDR !== "J") {
+        const clashCards = hand.filter(c => c.rank === lastDR);
+        if (clashCards.length > 0) {
+          clashCards.forEach(c => hand.splice(hand.findIndex(x => x.id === c.id), 1));
+          r.discardPile = [...clashCards, ...(r.discardPile || [])];
+          r.lastDropRank = lastDR;
+          if (!hand.length) { reshuffleIfNeeded(r); if (r.drawPile.length > 0) hand.push(r.drawPile.shift()); }
+          r.hands[botName] = hand;
+          r.log = [`🤖 ${botName} clash-dropped ${clashCards.map(c => c.rank + c.suit).join(",")} ⚡`, ...(r.log || []).slice(0, 14)];
+          r.currentPlayer = computeNext(curIdx, 0, aPlayers.length);
+          r.currentPlayerName = aPlayers[r.currentPlayer]?.name;
+          r.turnStartedAt = Date.now();
+          r._awaitingDraw = null;
+          await roomSet(roomId, r);
+          return;
+        }
+      }
+
+      // Drop highest-value card
+      const highestIdx = hand.reduce((maxI, c, i) =>
+        (c.rank === r.jokerRank ? 0 : cardValue(c.rank)) > (hand[maxI].rank === r.jokerRank ? 0 : cardValue(hand[maxI].rank)) ? i : maxI, 0);
+      const dropped = hand.splice(highestIdx, 1)[0];
+      r.discardPile = [dropped, ...(r.discardPile || [])];
+      r.lastDropRank = dropped.rank;
+
+      if (dropped.rank === "7") {
+        r.sevenPenalty = (r.sevenPenalty || 0) + 1;
+        if (!hand.length) { reshuffleIfNeeded(r); if (r.drawPile.length > 0) hand.push(r.drawPile.shift()); }
+      } else if (dropped.rank === "J") {
+        skipCount = 1;
+        if (!hand.length) { reshuffleIfNeeded(r); if (r.drawPile.length > 0) hand.push(r.drawPile.shift()); }
+      } else {
+        reshuffleIfNeeded(r);
+        if (r.drawPile.length > 0) hand.push(r.drawPile.shift());
+      }
+      r.hands[botName] = hand;
+      r.log = [`🤖 ${botName} dropped ${dropped.rank}${dropped.suit}`, ...(r.log || []).slice(0, 14)];
+    }
+
+    r.currentPlayer = computeNext(curIdx, skipCount, aPlayers.length);
+    r.currentPlayerName = aPlayers[r.currentPlayer]?.name;
+    r.turnStartedAt = Date.now();
+    r._awaitingDraw = null;
+    await roomSet(roomId, r);
+  };
+
+  // ── Trigger bot turns (host only) ──
+  useEffect(() => {
+    if (!gs || gs.roundOver || gs.gameOver || gs.host !== myName) return;
+
+    // Safety net: if a bot was left waiting to draw, resolve it
+    if (gs._awaitingDraw) {
+      const awaitingBot = (gs.players || []).find(p => p.name === gs._awaitingDraw && p.isBot);
+      if (awaitingBot) {
+        const t = setTimeout(() => botDrawFromPile(gs._awaitingDraw), 700);
+        return () => clearTimeout(t);
+      }
+      return;
+    }
+
+    const aPlayers = (gs.players || []).filter(p => !p.eliminated);
+    const curBot = aPlayers.find(p => p.name === gs.currentPlayerName && p.isBot);
+    if (!curBot) return;
+
+    const t = setTimeout(() => executeBotTurn(gs.currentPlayerName), 1400);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gs?.currentPlayerName, gs?._awaitingDraw, gs?.roundOver, gs?.gameOver]);
+
   // ── Hit Show ──
   const hitShow = async () => {
     if (myCount > 5) { flash(`Your count is ${myCount}. Need ≤ 5 to Show!`); return; }
@@ -1059,7 +1238,7 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
                 <TimerBorder pct={(timeLeft / 60) * 100} borderR={10} sw={3} />
               )}
               <div className="opp-chip-top">
-                <span className="opp-chip-name">{isCurrent ? "▶ " : ""}{p.name}</span>
+                <span className="opp-chip-name">{isCurrent ? "▶ " : ""}{p.name}{p.isBot ? " 🤖" : ""}</span>
                 {isHostMe && !p.eliminated && (
                   <button className="kick-game-btn" onClick={() => kickPlayer(p.name)} title={`Remove ${p.name}`}>✕</button>
                 )}
@@ -1681,6 +1860,9 @@ html,body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--cream
 .you-badge{background:rgba(255,255,255,0.1);color:var(--cream);}
 .kick-btn{margin-left:auto;background:rgba(231,76,60,0.15);border:1px solid rgba(231,76,60,0.3);color:#e74c3c;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;font-family:'Nunito',sans-serif;font-weight:700;}
 .kick-btn:hover{background:rgba(231,76,60,0.3);}
+.bot-badge{margin-left:auto;font-size:9px;padding:2px 7px;border-radius:10px;font-weight:700;letter-spacing:1px;background:rgba(52,152,219,0.18);color:#3498db;border:1px solid rgba(52,152,219,0.35);}
+.add-bot-btn{width:100%;padding:10px;margin-bottom:10px;background:rgba(52,152,219,0.12);border:1px solid rgba(52,152,219,0.3);border-radius:10px;color:#3498db;font-size:13px;font-weight:700;cursor:pointer;font-family:'Nunito',sans-serif;transition:all 0.2s;letter-spacing:1px;}
+.add-bot-btn:hover{background:rgba(52,152,219,0.22);transform:translateY(-1px);}
 .room-meta{font-size:12px;color:rgba(240,235,224,0.4);text-align:center;margin-bottom:14px;}
 .wait-hint{text-align:center;font-size:12px;color:rgba(240,235,224,0.4);margin-top:10px;}
 
