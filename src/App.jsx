@@ -1053,7 +1053,7 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
     const t = setTimeout(() => executeBotTurn(gs.currentPlayerName), 1400);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gs?.currentPlayerName, gs?._awaitingDraw, gs?.roundOver, gs?.gameOver]);
+  }, [gs?.currentPlayerName, gs?._awaitingDraw, gs?.roundOver, gs?.gameOver, gs?.turnStartedAt]);
 
   // ── Hit Show ──
   const hitShow = async () => {
@@ -1124,7 +1124,7 @@ function GameScreen({ roomId, myName, initialState, isPremium, setShowSubModal }
     const nextState = {
       code: r.code, host: r.host, maxPlayers: r.maxPlayers,
       numSets: r.numSets, maxScore: r.maxScore, phase: "playing",
-      players: r.players.map(p => ({ name: p.name, score: p.score, eliminated: p.eliminated })),
+      players: r.players.map(p => ({ name: p.name, score: p.score, eliminated: p.eliminated, ...(p.isBot && { isBot: true }) })),
       hands, drawPile: deck, discardPile: [],
       jokerRank: jc.rank, jokerSuit: jc.suit,
       currentPlayer: newStartIdx,
