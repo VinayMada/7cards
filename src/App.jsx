@@ -4,8 +4,10 @@ import { ref, set, get, remove, onValue, off } from "firebase/database";
 import { AdMob, RewardAdPluginEvents } from "@capacitor-community/admob";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { Capacitor } from "@capacitor/core";
-import { CapacitorPurchases } from "@capgo/capacitor-purchases";
 import { useChat, useVoice, ChatInline, VoiceMicButton, VoiceIndicator } from "./Chat";
+
+// RevenueCat stub — replace with real @capgo/capacitor-purchases once RC key is set up
+const CapacitorPurchases = { setup: async () => {}, getCustomerInfo: async () => { throw new Error("RC not configured"); }, getOfferings: async () => { throw new Error("RC not configured"); }, purchasePackage: async () => { throw new Error("RC not configured"); }, restorePurchases: async () => { throw new Error("RC not configured"); } };
 
 const IS_NATIVE = Capacitor.isNativePlatform();
 
