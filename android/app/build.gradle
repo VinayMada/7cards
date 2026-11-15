@@ -19,9 +19,9 @@ android {
     signingConfigs {
         release {
             storeFile file(System.getenv("KEYSTORE_PATH") ?: "../../android.keystore")
-            storePassword System.getenv("KEYSTORE_PASSWORD") ?: "@Vinaym33"
-            keyAlias System.getenv("KEY_ALIAS") ?: "android"
-            keyPassword System.getenv("KEY_PASSWORD") ?: "@Vinaym33"
+            storePassword System.getenv("KEYSTORE_PASSWORD")
+            keyAlias System.getenv("KEY_ALIAS")
+            keyPassword System.getenv("KEY_PASSWORD")
         }
     }
     buildTypes {
